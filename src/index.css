@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #FF6A00;
+  --color-dark: #1E1E2A;
+  --color-surface: #2A2A3A;
+  --color-text-muted: #AAAAAA;
+  
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-dark text-white font-sans;
+  }
+}
+
+.glass {
+  @apply bg-surface/80 backdrop-blur-md border border-white/10;
+}
+
+.btn-primary {
+  @apply bg-primary hover:bg-primary/90 text-white font-bold py-3 px-6 rounded-xl transition-all active:scale-95;
+}
+
+.btn-secondary {
+  @apply bg-surface hover:bg-white/10 text-white font-medium py-2 px-4 rounded-lg transition-all;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-dark;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-primary/20 rounded-full hover:bg-primary/40;
+}
+

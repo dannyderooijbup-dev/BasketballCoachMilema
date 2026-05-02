@@ -19,6 +19,12 @@ export interface Stats {
   steals: number;
   blocks: number;
   turnovers: number;
+  fgm: number;
+  fga: number;
+  threeFgm: number;
+  threeFga: number;
+  ftm: number;
+  fta: number;
 }
 
 export interface Player {
@@ -41,4 +47,4 @@ export interface MatchHistoryEntry {
   totalMatchTime: number;
 }
 
-export type Tab = 'dashboard' | 'history' | 'players';
+export type Tab = 'dashboard' | 'history' | 'players' | 'season';

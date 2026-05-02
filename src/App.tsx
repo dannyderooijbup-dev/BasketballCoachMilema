@@ -16,10 +16,14 @@ import {
   X, 
   ChevronRight,
   Trophy,
-  Activity
+  Activity,
+  BarChart3,
+  Download,
+  RotateCcw
 } from 'lucide-react';
 import { Player, MatchHistoryEntry, Tab, Position, Session } from './types';
-import { INITIAL_STATS, formatTime, formatDate } from './utils';
+import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
+import { exportMatchToPDF } from './pdfUtils';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -29,6 +33,9 @@ export default function App() {
   const [opponent, setOpponent] = useState('');
   const [showMatchStartModal, setShowMatchStartModal] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<MatchHistoryEntry | null>(null);
+
+  // Game Clock
+  const [gameClockRunning, setGameClockRunning] = useState(false);
 
   // Interval for live timer re-renders
   const [_, setTick] = useState(0);
@@ -42,6 +49,7 @@ export default function App() {
     const savedHistory = localStorage.getItem('matchesHistory');
     const savedMatchActive = localStorage.getItem('isMatchActive');
     const savedOpponent = localStorage.getItem('opponent');
+    const savedClock = localStorage.getItem('gameClockRunning');
 
     if (savedPlayers) {
       let parsedPlayers: Player[] = JSON.parse(savedPlayers);
@@ -63,6 +71,7 @@ export default function App() {
     if (savedHistory) setHistory(JSON.parse(savedHistory));
     if (savedMatchActive) setIsMatchActive(JSON.parse(savedMatchActive));
     if (savedOpponent) setOpponent(savedOpponent);
+    if (savedClock) setGameClockRunning(JSON.parse(savedClock));
 
     initialLoadDone.current = true;
   }, []);
@@ -74,7 +83,8 @@ export default function App() {
     localStorage.setItem('matchesHistory', JSON.stringify(history));
     localStorage.setItem('isMatchActive', JSON.stringify(isMatchActive));
     localStorage.setItem('opponent', opponent);
-  }, [players, history, isMatchActive, opponent]);
+    localStorage.setItem('gameClockRunning', JSON.stringify(gameClockRunning));
+  }, [players, history, isMatchActive, opponent, gameClockRunning]);
 
   // Tick for UI updates
   useEffect(() => {
@@ -102,6 +112,8 @@ export default function App() {
   };
 
   const toggleTimer = (id: string) => {
+    if (!gameClockRunning) return; // Prevent starting if clock is stopped
+
     setPlayers(prev => prev.map(p => {
       if (p.id !== id) return p;
 
@@ -130,18 +142,119 @@ export default function App() {
     }));
   };
 
+  const toggleGameClock = () => {
+    const newRunningState = !gameClockRunning;
+    setGameClockRunning(newRunningState);
+
+    // If pausing, stop all players
+    if (!newRunningState) {
+      const now = Date.now();
+      setPlayers(prev => prev.map(p => {
+        if (p.isRunning && p.lastStartTime) {
+          const duration = now - p.lastStartTime;
+          return {
+            ...p,
+            isRunning: false,
+            totalTime: p.totalTime + duration,
+            lastStartTime: null,
+            sessions: [...p.sessions, { start: p.lastStartTime, end: now, duration }]
+          };
+        }
+        return p;
+      }));
+    }
+  };
+
   const updateStat = (id: string, stat: keyof Player['stats'], delta: number) => {
     setPlayers(prev => prev.map(p => {
       if (p.id !== id) return p;
+      
+      const newStats = { ...p.stats };
+      
+      // Advanced Logic
+      if (stat === 'threeFgm' && delta > 0) {
+        newStats.threeFgm += delta;
+        newStats.threeFga += delta;
+        newStats.fgm += delta;
+        newStats.fga += delta;
+        newStats.points += (3 * delta);
+      } else if (stat === 'fgm' && delta > 0) {
+        newStats.fgm += delta;
+        newStats.fga += delta;
+        newStats.points += (2 * delta);
+      } else if (stat === 'ftm' && delta > 0) {
+        newStats.ftm += delta;
+        newStats.fta += delta;
+        newStats.points += delta;
+      } else if (delta > 0 && (stat === 'fga' || stat === 'threeFga' || stat === 'fta')) {
+        newStats[stat] += delta;
+      } else if (delta > 0) {
+        newStats[stat] = Math.max(0, newStats[stat] + delta);
+        if (stat === 'points') {
+          // Manual points correction doesn't affect other stats
+        }
+      } else if (delta < 0) {
+        // Simple decrement for undo
+        newStats[stat] = Math.max(0, newStats[stat] + delta);
+        // Important: this is a simple undo, doesn't revert complex logic fully 
+        // to keep it simple unless user asks for a full transaction-based undo
+      }
+
       return {
         ...p,
-        stats: {
-          ...p.stats,
-          [stat]: Math.max(0, p.stats[stat] + delta)
-        }
+        stats: newStats
       };
     }));
   };
+
+  const deleteMatch = (id: string) => {
+    if (confirm('Weet je zeker dat je deze wedstrijd wilt verwijderen?')) {
+      setHistory(history.filter(m => m.matchId !== id));
+    }
+  };
+
+  const seasonStats = useCallback(() => {
+    const stats: Record<string, any> = {};
+    
+    history.forEach(match => {
+      match.players.forEach(p => {
+        if (!stats[p.name]) {
+          stats[p.name] = {
+            name: p.name,
+            number: p.number,
+            totalTime: 0,
+            points: 0,
+            assists: 0,
+            rebounds: 0,
+            steals: 0,
+            blocks: 0,
+            turnovers: 0,
+            fgm: 0, fga: 0,
+            threeFgm: 0, threeFga: 0,
+            ftm: 0, fta: 0,
+            matches: 0
+          };
+        }
+        const s = stats[p.name];
+        s.totalTime += p.totalTime;
+        s.points += p.stats.points;
+        s.assists += p.stats.assists;
+        s.rebounds += p.stats.rebounds;
+        s.steals += p.stats.steals;
+        s.blocks += p.stats.blocks;
+        s.turnovers += p.stats.turnovers;
+        s.fgm += p.stats.fgm;
+        s.fga += p.stats.fga;
+        s.threeFgm += p.stats.threeFgm;
+        s.threeFga += p.stats.threeFga;
+        s.ftm += p.stats.ftm;
+        s.fta += p.stats.fta;
+        s.matches += 1;
+      });
+    });
+
+    return Object.values(stats);
+  }, [history]);
 
   const startNewMatch = () => {
     if (!opponent.trim()) return;
@@ -205,6 +318,30 @@ export default function App() {
 
   const renderDashboard = () => (
     <div className="space-y-6">
+      {/* Game Clock Control */}
+      <div className="bg-surface p-6 rounded-2xl shadow-xl border border-white/10 flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div className="flex items-center gap-4">
+          <div className={`p-4 rounded-2xl ${gameClockRunning ? 'bg-primary shadow-[0_0_20px_rgba(255,106,0,0.4)]' : 'bg-white/5'} transition-all`}>
+            <Timer size={32} className={gameClockRunning ? 'text-white' : 'text-text-muted'} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-black italic uppercase tracking-tighter">Wedstrijdklok</h2>
+            <p className="text-text-muted text-sm uppercase tracking-widest">{gameClockRunning ? 'Klok Loopt' : 'Klok Gestopt'}</p>
+          </div>
+        </div>
+        <button 
+          onClick={toggleGameClock}
+          className={`w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 rounded-2xl font-black uppercase italic transition-all active:scale-95 ${
+            gameClockRunning 
+              ? 'bg-red-500/10 text-red-500 border border-red-500/30' 
+              : 'bg-primary text-white shadow-lg shadow-primary/20'
+          }`}
+        >
+          {gameClockRunning ? <Pause /> : <Play />}
+          {gameClockRunning ? 'Pauze' : 'Start Klok'}
+        </button>
+      </div>
+
       <div className="flex justify-between items-center bg-surface p-4 rounded-2xl shadow-lg border border-white/5">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
@@ -255,19 +392,31 @@ export default function App() {
               </div>
 
               <div className="p-4 space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <StatButton label="PTN" value={player.stats.points} onAdd={() => updateStat(player.id, 'points', 1)} onSub={() => updateStat(player.id, 'points', -1)} />
+                  <StatButton label="FG" value={`${player.stats.fgm}/${player.stats.fga}`} onAdd={() => updateStat(player.id, 'fgm', 1)} onSub={() => updateStat(player.id, 'fga', 1)} isSpecial />
+                  <StatButton label="3P" value={`${player.stats.threeFgm}/${player.stats.threeFga}`} onAdd={() => updateStat(player.id, 'threeFgm', 1)} onSub={() => updateStat(player.id, 'threeFga', 1)} isSpecial />
+                  <StatButton label="FT" value={`${player.stats.ftm}/${player.stats.fta}`} onAdd={() => updateStat(player.id, 'ftm', 1)} onSub={() => updateStat(player.id, 'fta', 1)} isSpecial />
+                </div>
+                
                 <div className="grid grid-cols-3 gap-2">
-                  <StatButton label="Punten" value={player.stats.points} onClick={() => updateStat(player.id, 'points', 1)} />
-                  <StatButton label="Assists" value={player.stats.assists} onClick={() => updateStat(player.id, 'assists', 1)} />
-                  <StatButton label="Rebounds" value={player.stats.rebounds} onClick={() => updateStat(player.id, 'rebounds', 1)} />
-                  <StatButton label="Steals" value={player.stats.steals} onClick={() => updateStat(player.id, 'steals', 1)} />
-                  <StatButton label="Blocks" value={player.stats.blocks} onClick={() => updateStat(player.id, 'blocks', 1)} />
-                  <StatButton label="TO" value={player.stats.turnovers} onClick={() => updateStat(player.id, 'turnovers', 1)} />
+                  <StatControl label="AST" value={player.stats.assists} onAdd={() => updateStat(player.id, 'assists', 1)} onSub={() => updateStat(player.id, 'assists', -1)} />
+                  <StatControl label="REB" value={player.stats.rebounds} onAdd={() => updateStat(player.id, 'rebounds', 1)} onSub={() => updateStat(player.id, 'rebounds', -1)} />
+                  <StatControl label="STL" value={player.stats.steals} onAdd={() => updateStat(player.id, 'steals', 1)} onSub={() => updateStat(player.id, 'steals', -1)} />
+                  <StatControl label="BLK" value={player.stats.blocks} onAdd={() => updateStat(player.id, 'blocks', 1)} onSub={() => updateStat(player.id, 'blocks', -1)} />
+                  <StatControl label="TO" value={player.stats.turnovers} onAdd={() => updateStat(player.id, 'turnovers', 1)} onSub={() => updateStat(player.id, 'turnovers', -1)} />
+                  <button onClick={() => updateStat(player.id, 'points', -1)} className="bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-text-muted">
+                    <RotateCcw size={16} className="mr-1" /> Undo
+                  </button>
                 </div>
 
                 <button 
                   onClick={() => toggleTimer(player.id)}
+                  disabled={!gameClockRunning && !player.isRunning}
                   className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
-                    player.isRunning ? 'bg-red-500/20 text-red-500 border border-red-500/50' : 'bg-primary text-white'
+                    player.isRunning ? 'bg-red-500/20 text-red-500 border border-red-500/50' : 
+                    !gameClockRunning ? 'bg-white/5 text-text-muted cursor-not-allowed border border-white/5' :
+                    'bg-primary text-white'
                   }`}
                 >
                   {player.isRunning ? <Pause size={20} /> : <Play size={20} />}
@@ -311,6 +460,13 @@ export default function App() {
                 <p className="text-xs text-text-muted uppercase">Spelers</p>
                 <p className="font-bold">{match.players.length}</p>
               </div>
+              <button 
+                onClick={(e) => { e.stopPropagation(); deleteMatch(match.matchId); }}
+                className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                title="Verwijderen"
+              >
+                <Trash2 size={18} />
+              </button>
               <ChevronRight className="text-text-muted" />
             </div>
           </button>
@@ -358,6 +514,57 @@ export default function App() {
     </div>
   );
 
+  const renderSeason = () => {
+    const stats = seasonStats();
+    return (
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold">Seizoensstatistieken</h2>
+        <div className="overflow-x-auto bg-surface rounded-2xl border border-white/10 shadow-xl overflow-hidden">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-white/5 text-[10px] uppercase tracking-widest text-text-muted border-b border-white/5">
+                <th className="px-4 py-3">Speler</th>
+                <th className="px-4 py-3">W</th>
+                <th className="px-4 py-3">Tijd</th>
+                <th className="px-4 py-3">PTN</th>
+                <th className="px-4 py-3">FG%</th>
+                <th className="px-4 py-3">3P%</th>
+                <th className="px-4 py-3">FT%</th>
+                <th className="px-4 py-3">REB</th>
+                <th className="px-4 py-3">AST</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.map((s: any) => (
+                <tr key={s.name} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                  <td className="px-4 py-4">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-primary">#{s.number}</span>
+                      <span className="font-medium text-sm">{s.name}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 font-mono text-sm">{s.matches}</td>
+                  <td className="px-4 py-4 font-mono text-sm">{formatTime(s.totalTime)}</td>
+                  <td className="px-4 py-4 font-bold text-primary">{Math.round(s.points / s.matches)} <span className="text-[10px] text-text-muted font-normal italic">avg</span></td>
+                  <td className="px-4 py-4 font-mono text-sm">{calculatePercentage(s.fgm, s.fga)}</td>
+                  <td className="px-4 py-4 font-mono text-sm">{calculatePercentage(s.threeFgm, s.threeFga)}</td>
+                  <td className="px-4 py-4 font-mono text-sm">{calculatePercentage(s.ftm, s.fta)}</td>
+                  <td className="px-4 py-4 font-mono text-sm">{(s.rebounds / s.matches).toFixed(1)}</td>
+                  <td className="px-4 py-4 font-mono text-sm">{(s.assists / s.matches).toFixed(1)}</td>
+                </tr>
+              ))}
+              {stats.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="py-20 text-center text-text-muted">Geen data beschikbaar</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
   const [showAddPlayerModal, setShowAddPlayerModal] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerNumber, setNewPlayerNumber] = useState('');
@@ -373,8 +580,9 @@ export default function App() {
           <p className="text-[10px] text-text-muted uppercase tracking-[0.2em]">Milema Webdesign × Jeremy Hooi</p>
         </div>
         <div className="hidden md:flex bg-surface rounded-xl p-1 border border-white/5">
-          <TabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Timer size={18} />} label="Dashboard" />
+          <TabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Timer size={18} />} label="Match" />
           <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={18} />} label="Historie" />
+          <TabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={18} />} label="Seizoen" />
           <TabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={18} />} label="Spelers" />
         </div>
       </header>
@@ -382,13 +590,15 @@ export default function App() {
       <main className="py-4">
         {activeTab === 'dashboard' && renderDashboard()}
         {activeTab === 'history' && renderHistory()}
+        {activeTab === 'season' && renderSeason()}
         {activeTab === 'players' && renderPlayers()}
       </main>
 
       {/* Mobile Nav */}
       <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-dark/80 backdrop-blur-xl border-t border-white/10 px-6 py-4 flex justify-between items-center z-50">
-        <MobileTabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Activity size={24} />} label="Stats" />
+        <MobileTabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Activity size={24} />} label="Live" />
         <MobileTabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={24} />} label="Historie" />
+        <MobileTabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={24} />} label="Seizoen" />
         <MobileTabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={24} />} label="Team" />
       </nav>
 
@@ -506,9 +716,17 @@ export default function App() {
                   <h3 className="text-2xl font-bold italic uppercase tracking-tighter">Match Detail</h3>
                   <p className="text-text-muted text-sm capitalize">{formatDate(selectedMatch.date)}</p>
                 </div>
-                <button onClick={() => setSelectedMatch(null)} className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition-colors">
-                  <X />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => exportMatchToPDF(selectedMatch)}
+                    className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all"
+                  >
+                    <Download size={18} /> Export PDF
+                  </button>
+                  <button onClick={() => setSelectedMatch(null)} className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition-colors">
+                    <X />
+                  </button>
+                </div>
               </div>
 
               <div className="p-6 space-y-8 max-h-[80vh] overflow-y-auto">
@@ -571,19 +789,33 @@ export default function App() {
   );
 }
 
-function StatButton({ label, value, onClick }: { label: string, value: number, onClick: () => void }) {
+function StatButton({ label, value, onAdd, onSub, isSpecial }: { label: string, value: string | number, onAdd: () => void, onSub: () => void, isSpecial?: boolean }) {
   return (
-    <button 
-      onClick={onClick}
-      className="bg-dark p-2 rounded-xl border border-white/5 hover:border-primary/50 transition-all active:scale-95 text-center group"
-    >
-      <div className="text-[9px] text-text-muted uppercase group-hover:text-primary transition-colors">{label}</div>
-      <div className="text-xl font-bold">{value}</div>
-    </button>
+    <div className="bg-dark p-2 rounded-xl border border-white/5 flex flex-col justify-between group h-full">
+      <div className="text-[9px] text-text-muted uppercase text-center mb-1">{label}</div>
+      <div className="text-lg font-bold text-center mb-2">{value}</div>
+      <div className="flex gap-1">
+        <button onClick={onAdd} className="flex-1 bg-primary text-white py-1.5 rounded-lg active:scale-90 transition-transform font-bold text-sm">+</button>
+        <button onClick={onSub} className="flex-1 bg-white/5 text-text-muted py-1.5 rounded-lg active:scale-90 transition-transform font-bold text-xs">{isSpecial ? 'A' : '-'}</button>
+      </div>
+    </div>
   );
 }
 
-function HistoryStat({ label, value }: { label: string, value: number }) {
+function StatControl({ label, value, onAdd, onSub }: { label: string, value: number, onAdd: () => void, onSub: () => void }) {
+  return (
+    <div className="bg-dark p-1.5 rounded-xl border border-white/5 flex flex-col items-center">
+      <div className="text-[8px] text-text-muted uppercase mb-0.5">{label}</div>
+      <div className="text-lg font-bold mb-1">{value}</div>
+      <div className="flex gap-1 w-full">
+        <button onClick={onAdd} className="flex-1 bg-primary/20 text-primary py-1 rounded-lg active:scale-90 transition-transform font-bold text-xs">+</button>
+        <button onClick={onSub} className="flex-1 bg-white/5 text-text-muted py-1 rounded-lg active:scale-90 transition-transform font-bold text-xs">-</button>
+      </div>
+    </div>
+  );
+}
+
+function HistoryStat({ label, value }: { label: string, value: number | string }) {
   return (
     <div className="bg-dark/50 p-2 rounded-lg text-center border border-white/5">
       <div className="text-[8px] text-text-muted uppercase font-bold">{label}</div>

@@ -11,8 +11,19 @@ export const INITIAL_STATS: Stats = {
   rebounds: 0,
   steals: 0,
   blocks: 0,
-  turnovers: 0
+  turnovers: 0,
+  fgm: 0,
+  fga: 0,
+  threeFgm: 0,
+  threeFga: 0,
+  ftm: 0,
+  fta: 0
 };
+
+export function calculatePercentage(made: number, attempted: number): string {
+  if (attempted === 0) return '0%';
+  return Math.round((made / attempted) * 100) + '%';
+}
 
 export function formatTime(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);

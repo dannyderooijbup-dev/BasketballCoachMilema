@@ -112,31 +112,32 @@ export default function App() {
   };
 
   const toggleTimer = (id: string) => {
-    if (!gameClockRunning) return; // Prevent starting if clock is stopped
-
     setPlayers(prev => prev.map(p => {
       if (p.id !== id) return p;
 
+      const now = Date.now();
       if (p.isRunning) {
-        const now = Date.now();
-        const duration = now - (p.lastStartTime || now);
-        const newSession: Session = {
-          start: p.lastStartTime || now,
-          end: now,
-          duration
-        };
+        // Subbing out
+        let newTotalTime = p.totalTime;
+        let newSessions = [...p.sessions];
+        if (p.lastStartTime) {
+          const duration = now - p.lastStartTime;
+          newTotalTime += duration;
+          newSessions.push({ start: p.lastStartTime, end: now, duration });
+        }
         return {
           ...p,
           isRunning: false,
-          totalTime: p.totalTime + duration,
+          totalTime: newTotalTime,
           lastStartTime: null,
-          sessions: [...p.sessions, newSession]
+          sessions: newSessions
         };
       } else {
+        // Subbing in
         return {
           ...p,
           isRunning: true,
-          lastStartTime: Date.now()
+          lastStartTime: gameClockRunning ? now : null
         };
       }
     }));
@@ -145,24 +146,31 @@ export default function App() {
   const toggleGameClock = () => {
     const newRunningState = !gameClockRunning;
     setGameClockRunning(newRunningState);
+    const now = Date.now();
 
-    // If pausing, stop all players
-    if (!newRunningState) {
-      const now = Date.now();
-      setPlayers(prev => prev.map(p => {
-        if (p.isRunning && p.lastStartTime) {
+    setPlayers(prev => prev.map(p => {
+      if (!p.isRunning) return p;
+
+      if (!newRunningState) {
+        // Pausing: save progress to totalTime and session slice if was running
+        if (p.lastStartTime) {
           const duration = now - p.lastStartTime;
           return {
             ...p,
-            isRunning: false,
             totalTime: p.totalTime + duration,
             lastStartTime: null,
             sessions: [...p.sessions, { start: p.lastStartTime, end: now, duration }]
           };
         }
-        return p;
-      }));
-    }
+      } else {
+        // Resuming: start new timing reference
+        return {
+          ...p,
+          lastStartTime: now
+        };
+      }
+      return p;
+    }));
   };
 
   const updateStat = (id: string, stat: keyof Player['stats'], delta: number) => {
@@ -300,6 +308,7 @@ export default function App() {
     setHistory([newEntry, ...history]);
     setPlayers(finalPlayers); // Update local state for reset
     setIsMatchActive(false);
+    setGameClockRunning(false);
     setOpponent('');
   };
 
@@ -313,6 +322,7 @@ export default function App() {
       stats: { ...INITIAL_STATS }
     })));
     setIsMatchActive(false);
+    setGameClockRunning(false);
     setOpponent('');
   };
 
@@ -384,7 +394,7 @@ export default function App() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className={`text-2xl font-mono font-bold ${player.isRunning ? 'text-primary animate-pulse' : 'text-white'}`}>
+                  <div className={`text-2xl font-mono font-bold ${player.isRunning && gameClockRunning ? 'text-primary animate-pulse' : (player.isRunning ? 'text-orange-300' : 'text-white')}`}>
                     {formatTime(liveTime)}
                   </div>
                   <div className="text-[10px] text-text-muted uppercase">Beurten: {player.sessions.length}</div>
@@ -412,15 +422,13 @@ export default function App() {
 
                 <button 
                   onClick={() => toggleTimer(player.id)}
-                  disabled={!gameClockRunning && !player.isRunning}
                   className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
                     player.isRunning ? 'bg-red-500/20 text-red-500 border border-red-500/50' : 
-                    !gameClockRunning ? 'bg-white/5 text-text-muted cursor-not-allowed border border-white/5' :
-                    'bg-primary text-white'
+                    'bg-primary text-white shadow-lg shadow-primary/20 hover:scale-[1.02]'
                   }`}
                 >
                   {player.isRunning ? <Pause size={20} /> : <Play size={20} />}
-                  {player.isRunning ? 'Beurt Stoppen' : 'Beurt Starten'}
+                  {player.isRunning ? 'Wissel Uit' : 'Wissel In'}
                 </button>
               </div>
             </motion.div>

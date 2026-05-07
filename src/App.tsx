@@ -678,22 +678,9 @@ export default function App() {
       <header className="py-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-4">
-            <img 
-              src="/input_file_1.png" 
-              alt="Basketball Coach - GameStats Logo" 
-              className="h-16 md:h-20 w-auto object-contain"
-              referrerPolicy="no-referrer"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-                const parent = e.currentTarget.parentElement;
-                if (parent) {
-                  const fallback = document.createElement('div');
-                  fallback.className = 'text-2xl font-black text-primary tracking-tighter uppercase italic';
-                  fallback.innerText = 'Basketball Coach - GameStats';
-                  parent.appendChild(fallback);
-                }
-              }}
-            />
+            <div className="flex items-center">
+              <Logo />
+            </div>
           </div>
           <p className="text-[10px] text-text-muted uppercase tracking-[0.2em] mt-1">Milema Webdesign × Jeremy Hooi</p>
         </div>
@@ -998,6 +985,28 @@ function HistoryStat({ label, value }: { label: string, value: number | string }
       <div className="text-[8px] text-text-muted uppercase font-bold">{label}</div>
       <div className="text-lg font-bold">{value}</div>
     </div>
+  );
+}
+
+function Logo() {
+  const [error, setError] = useState(false);
+
+  if (error) {
+    return (
+      <h1 className="text-2xl font-black text-primary tracking-tighter uppercase italic font-display">
+        Basketball Coach - GameStats
+      </h1>
+    );
+  }
+
+  return (
+    <img 
+      src="/input_file_1.png" 
+      alt="Basketball Coach - GameStats" 
+      className="h-14 md:h-16 w-auto object-contain"
+      onError={() => setError(true)}
+      referrerPolicy="no-referrer"
+    />
   );
 }
 

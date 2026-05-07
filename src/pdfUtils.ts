@@ -14,7 +14,7 @@ export function exportMatchToPDF(match: MatchHistoryEntry) {
   // Header
   doc.setFontSize(22);
   doc.setTextColor(255, 106, 0); // Primary orange
-  doc.text('BASKETBALL COACH TIMER', 14, 20);
+  doc.text('BASKETBALL COACH - GAMESTATS', 14, 20);
   
   doc.setFontSize(12);
   doc.setTextColor(100, 100, 100);

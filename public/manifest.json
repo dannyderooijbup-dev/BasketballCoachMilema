@@ -1,20 +1,20 @@
 {
-  "name": "Basketball Coach Timer",
-  "short_name": "Coach Timer",
+  "name": "Basketball Coach - GameStats",
+  "short_name": "GameStats",
   "description": "Professionele basketball coaching tool voor speeltijd en stats.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1E1E2A",
+  "background_color": "#0D1117",
   "theme_color": "#FF6A00",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/889/889508.png",
+      "src": "/input_file_0.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/889/889508.png",
+      "src": "/input_file_0.png",
       "sizes": "512x512",
       "type": "image/png"
     }

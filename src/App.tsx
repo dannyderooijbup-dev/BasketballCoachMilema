@@ -401,30 +401,32 @@ export default function App() {
             <Timer size={32} className={gameClockRunning ? 'text-white' : 'text-text-muted'} />
           </div>
           <div>
-            <h2 className="text-2xl font-black italic uppercase tracking-tighter">Wedstrijdklok</h2>
-            <p className="text-text-muted text-sm uppercase tracking-widest">{gameClockRunning ? 'Klok Loopt' : 'Klok Gestopt'}</p>
+            <h2 className="text-3xl font-black font-display italic uppercase tracking-tighter">Wedstrijdklok</h2>
+            <p className="text-text-muted text-xs uppercase tracking-widest font-medium">{gameClockRunning ? 'Klok Loopt' : 'Klok Gestopt'}</p>
           </div>
         </div>
         <button 
           onClick={toggleGameClock}
-          className={`w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 rounded-2xl font-black uppercase italic transition-all active:scale-95 ${
+          className={`w-full sm:w-auto flex items-center justify-center gap-3 px-10 py-5 rounded-2xl font-black font-display uppercase italic transition-all active:scale-95 ${
             gameClockRunning 
-              ? 'bg-red-500/10 text-red-500 border border-red-500/30' 
-              : 'bg-primary text-white shadow-lg shadow-primary/20'
+              ? 'bg-red-500/10 text-red-500 border border-red-500/20' 
+              : 'bg-primary text-white shadow-xl shadow-primary/30 hover:scale-[1.02]'
           }`}
         >
-          {gameClockRunning ? <Pause /> : <Play />}
+          {gameClockRunning ? <Pause size={24} strokeWidth={3} /> : <Play size={24} fill="white" strokeWidth={3} />}
           {gameClockRunning ? 'Pauze' : 'Start Klok'}
         </button>
       </div>
 
-      <div className="flex justify-between items-center bg-surface p-4 rounded-2xl shadow-lg border border-white/5">
+      <div className="flex justify-between items-center bg-surface p-6 rounded-2xl shadow-xl border border-white/5">
         <div>
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Trophy className="text-primary" />
-            {isMatchActive ? `vs ${opponent}` : 'Geen actieve wedstrijd'}
+          <h2 className="text-2xl font-display font-black text-white flex items-center gap-2 italic tracking-tighter">
+            <Trophy className="text-primary" size={24} />
+            {isMatchActive ? opponent.toUpperCase() : 'GEEN ACTIEVE WEDSTRIJD'}
           </h2>
-          <p className="text-text-muted text-sm">{isMatchActive ? 'Wedstrijd is bezig...' : 'Start een nieuwe wedstrijd om te beginnen'}</p>
+          <p className="text-text-muted text-xs uppercase tracking-widest font-bold mt-1">
+            {isMatchActive ? 'Live wedstrijd bezig...' : 'Start een nieuwe wedstrijd om stats te tracken'}
+          </p>
         </div>
         {!isMatchActive ? (
           <button onClick={() => setShowMatchStartModal(true)} className="btn-primary flex items-center gap-2 py-2">
@@ -460,40 +462,40 @@ export default function App() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className={`text-2xl font-mono font-bold ${player.isRunning && gameClockRunning ? 'text-primary animate-pulse' : (player.isRunning ? 'text-orange-300' : 'text-white')}`}>
+                  <div className={`text-3xl font-mono font-black ${player.isRunning && gameClockRunning ? 'text-primary animate-pulse' : (player.isRunning ? 'text-orange-400' : 'text-white')}`}>
                     {formatTime(liveTime)}
                   </div>
-                  <div className="text-[10px] text-text-muted uppercase">Beurten: {player.sessions.length}</div>
+                  <div className="text-[10px] text-text-muted uppercase font-bold tracking-tight">Beurten: {player.sessions.length}</div>
                 </div>
               </div>
 
-              <div className="p-4 space-y-4">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="p-4 space-y-6">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <StatButton label="PTN" value={player.stats.points} onAdd={() => updateStat(player.id, 'points', 1)} onSub={() => updateStat(player.id, 'points', -1)} />
                   <StatButton label="FG" value={`${player.stats.fgm}/${player.stats.fga}`} onAdd={() => updateStat(player.id, 'fgm', 1)} onSub={() => updateStat(player.id, 'fga', 1)} isSpecial />
                   <StatButton label="3P" value={`${player.stats.threeFgm}/${player.stats.threeFga}`} onAdd={() => updateStat(player.id, 'threeFgm', 1)} onSub={() => updateStat(player.id, 'threeFga', 1)} isSpecial />
                   <StatButton label="FT" value={`${player.stats.ftm}/${player.stats.fta}`} onAdd={() => updateStat(player.id, 'ftm', 1)} onSub={() => updateStat(player.id, 'fta', 1)} isSpecial />
                 </div>
                 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-3">
                   <StatControl label="AST" value={player.stats.assists} onAdd={() => updateStat(player.id, 'assists', 1)} onSub={() => updateStat(player.id, 'assists', -1)} />
                   <StatControl label="REB" value={player.stats.rebounds} onAdd={() => updateStat(player.id, 'rebounds', 1)} onSub={() => updateStat(player.id, 'rebounds', -1)} />
                   <StatControl label="STL" value={player.stats.steals} onAdd={() => updateStat(player.id, 'steals', 1)} onSub={() => updateStat(player.id, 'steals', -1)} />
                   <StatControl label="BLK" value={player.stats.blocks} onAdd={() => updateStat(player.id, 'blocks', 1)} onSub={() => updateStat(player.id, 'blocks', -1)} />
                   <StatControl label="TO" value={player.stats.turnovers} onAdd={() => updateStat(player.id, 'turnovers', 1)} onSub={() => updateStat(player.id, 'turnovers', -1)} />
-                  <button onClick={() => undoLastAction(player.id)} className="bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-text-muted">
-                    <RotateCcw size={16} className="mr-1" /> Undo
+                  <button onClick={() => undoLastAction(player.id)} className="bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-text-muted text-xs font-bold transition-colors">
+                    <RotateCcw size={14} className="mr-2" /> UNDO
                   </button>
                 </div>
 
                 <button 
                   onClick={() => toggleTimer(player.id)}
-                  className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
-                    player.isRunning ? 'bg-red-500/20 text-red-500 border border-red-500/50' : 
+                  className={`w-full py-4 rounded-xl font-display font-black uppercase italic flex items-center justify-center gap-3 transition-all ${
+                    player.isRunning ? 'bg-red-500/20 text-red-500 border border-red-500/30' : 
                     'bg-primary text-white shadow-lg shadow-primary/20 hover:scale-[1.02]'
                   }`}
                 >
-                  {player.isRunning ? <Pause size={20} /> : <Play size={20} />}
+                  {player.isRunning ? <Pause size={20} strokeWidth={3} /> : <Play size={20} fill="white" strokeWidth={3} />}
                   {player.isRunning ? 'Wissel Uit' : 'Wissel In'}
                 </button>
               </div>
@@ -511,8 +513,8 @@ export default function App() {
   );
 
   const renderHistory = () => (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-bold mb-6">Wedstrijd Historie</h2>
+    <div className="space-y-6">
+      <h2 className="text-3xl font-display font-black italic uppercase tracking-tighter">Wedstrijdhistorie</h2>
       <div className="space-y-3">
         {history.map(match => (
           <button 
@@ -525,8 +527,8 @@ export default function App() {
                 <Trophy size={24} />
               </div>
               <div>
-                <h3 className="font-bold text-lg">vs {match.opponent}</h3>
-                <p className="text-sm text-text-muted">{formatDate(match.date)}</p>
+                <h3 className="font-display font-black uppercase italic tracking-tight text-lg">{match.opponent}</h3>
+                <p className="text-[10px] text-text-muted uppercase tracking-widest font-bold">{formatDate(match.date)}</p>
               </div>
             </div>
             <div className="flex items-center gap-4 text-right">
@@ -558,8 +560,11 @@ export default function App() {
   const renderPlayers = () => (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Team Beheer</h2>
-        <button onClick={() => setShowAddPlayerModal(true)} className="btn-primary flex items-center gap-2 py-2">
+        <h2 className="text-3xl font-display font-black italic uppercase tracking-tighter">Spelerslijst</h2>
+        <button 
+          onClick={() => setShowAddPlayerModal(true)}
+          className="bg-primary text-white px-6 py-3 rounded-xl font-display font-black uppercase italic tracking-tighter shadow-lg shadow-primary/20 flex items-center gap-2"
+        >
           <Plus size={18} /> Nieuwe Speler
         </button>
       </div>
@@ -606,20 +611,20 @@ export default function App() {
     const stats = seasonStats();
     return (
       <div className="space-y-6">
-        <h2 className="text-2xl font-bold">Seizoensstatistieken</h2>
-        <div className="overflow-x-auto bg-surface rounded-2xl border border-white/10 shadow-xl overflow-hidden">
+        <h2 className="text-3xl font-display font-black italic uppercase tracking-tighter">Seizoensstatistieken</h2>
+        <div className="overflow-x-auto bg-surface rounded-3xl border border-white/10 shadow-2xl overflow-hidden">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-white/5 text-[10px] uppercase tracking-widest text-text-muted border-b border-white/5">
-                <th className="px-4 py-3">Speler</th>
-                <th className="px-4 py-3">W</th>
-                <th className="px-4 py-3">Tijd</th>
-                <th className="px-4 py-3">PTN</th>
-                <th className="px-4 py-3">FG%</th>
-                <th className="px-4 py-3">3P%</th>
-                <th className="px-4 py-3">FT%</th>
-                <th className="px-4 py-3">REB</th>
-                <th className="px-4 py-3">AST</th>
+              <tr className="bg-white/5 text-[10px] uppercase tracking-widest text-text-muted border-b border-white/5 font-bold italic">
+                <th className="px-4 py-4">Speler</th>
+                <th className="px-4 py-4">W</th>
+                <th className="px-4 py-4">Tijd</th>
+                <th className="px-4 py-4">PTN</th>
+                <th className="px-4 py-4">FG%</th>
+                <th className="px-4 py-4">3P%</th>
+                <th className="px-4 py-4">FT%</th>
+                <th className="px-4 py-4">REB</th>
+                <th className="px-4 py-4">AST</th>
               </tr>
             </thead>
             <tbody>
@@ -670,14 +675,29 @@ export default function App() {
 
   return (
     <div className="min-h-screen pb-24 md:pb-0 md:pt-6 max-w-5xl mx-auto px-4">
-      <header className="py-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-black text-primary tracking-tighter uppercase italic">
-            Basketball Coach Timer
-          </h1>
-          <p className="text-[10px] text-text-muted uppercase tracking-[0.2em]">Milema Webdesign × Jeremy Hooi</p>
+      <header className="py-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-4">
+            <img 
+              src="/input_file_1.png" 
+              alt="Basketball Coach - GameStats Logo" 
+              className="h-16 md:h-20 w-auto object-contain"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                const parent = e.currentTarget.parentElement;
+                if (parent) {
+                  const fallback = document.createElement('div');
+                  fallback.className = 'text-2xl font-black text-primary tracking-tighter uppercase italic';
+                  fallback.innerText = 'Basketball Coach - GameStats';
+                  parent.appendChild(fallback);
+                }
+              }}
+            />
+          </div>
+          <p className="text-[10px] text-text-muted uppercase tracking-[0.2em] mt-1">Milema Webdesign × Jeremy Hooi</p>
         </div>
-        <div className="hidden md:flex bg-surface rounded-xl p-1 border border-white/5">
+        <div className="flex bg-surface rounded-2xl p-1 border border-white/5 backdrop-blur-sm self-start md:self-center">
           <TabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Timer size={18} />} label="Match" />
           <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={18} />} label="Historie" />
           <TabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={18} />} label="Seizoen" />
@@ -811,8 +831,8 @@ export default function App() {
             >
               <div className="bg-white/5 p-6 flex justify-between items-center border-b border-white/5">
                 <div>
-                  <h3 className="text-2xl font-bold italic uppercase tracking-tighter">Match Detail</h3>
-                  <p className="text-text-muted text-sm capitalize">{formatDate(selectedMatch.date)}</p>
+                  <h3 className="text-3xl font-display font-black italic uppercase tracking-tighter">Match Detail</h3>
+                  <p className="text-text-muted text-[10px] uppercase tracking-[0.2em] font-bold">{formatDate(selectedMatch.date)}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
@@ -828,19 +848,19 @@ export default function App() {
               </div>
 
               <div className="p-6 space-y-8 max-h-[80vh] overflow-y-auto">
-                <div className="bg-primary/10 p-6 rounded-2xl flex items-center justify-between">
-                  <div className="flex items-center gap-6">
-                    <div className="text-4xl font-black italic">VS</div>
-                    <div className="text-3xl font-bold">{selectedMatch.opponent}</div>
+                <div className="bg-primary/10 p-8 rounded-[2rem] flex items-center justify-between shadow-inner border border-primary/10">
+                  <div className="flex items-center gap-8">
+                    <div className="text-5xl font-display font-black italic text-primary/30 tracking-tighter">VS</div>
+                    <div className="text-4xl font-display font-black uppercase italic tracking-tighter">{selectedMatch.opponent}</div>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs text-text-muted uppercase tracking-wider">Totaal Speeltijd</p>
-                    <p className="text-2xl font-mono text-primary font-bold">{formatTime(selectedMatch.totalMatchTime)}</p>
+                    <p className="text-[10px] text-text-muted uppercase tracking-[0.2em] font-bold">Totaal Speeltijd</p>
+                    <p className="text-3xl font-mono text-primary font-black italic">{formatTime(selectedMatch.totalMatchTime)}</p>
                   </div>
                 </div>
 
                 <div className="space-y-6">
-                  <h4 className="text-lg font-bold border-l-4 border-primary pl-3 uppercase">Speler Statistieken</h4>
+                  <h4 className="text-xl font-display font-black italic uppercase tracking-tighter text-white border-l-4 border-primary pl-4">Speler Statistieken</h4>
                   <div className="grid grid-cols-1 gap-4">
                     {selectedMatch.players.map(player => (
                       <div key={player.id} className="bg-white/5 p-4 rounded-xl space-y-4 border border-white/5">
@@ -948,12 +968,12 @@ export default function App() {
 
 function StatButton({ label, value, onAdd, onSub, isSpecial }: { label: string, value: string | number, onAdd: () => void, onSub: () => void, isSpecial?: boolean }) {
   return (
-    <div className="bg-dark p-2 rounded-xl border border-white/5 flex flex-col justify-between group h-full">
-      <div className="text-[9px] text-text-muted uppercase text-center mb-1">{label}</div>
-      <div className="text-lg font-bold text-center mb-2">{value}</div>
-      <div className="flex gap-1">
-        <button onClick={onAdd} className="flex-1 bg-primary text-white py-1.5 rounded-lg active:scale-90 transition-transform font-bold text-sm">+</button>
-        <button onClick={onSub} className="flex-1 bg-white/5 text-text-muted py-1.5 rounded-lg active:scale-90 transition-transform font-bold text-xs">{isSpecial ? 'A' : '-'}</button>
+    <div className="bg-dark/40 p-3 rounded-2xl border border-white/5 flex flex-col justify-between group h-full shadow-inner">
+      <div className="text-[10px] text-text-muted font-bold uppercase text-center mb-1 tracking-wider">{label}</div>
+      <div className="text-xl font-display font-black text-center mb-3 text-white italic">{value}</div>
+      <div className="flex gap-2">
+        <button onClick={onAdd} className="flex-1 bg-primary text-white py-2 rounded-xl active:scale-90 transition-all font-black font-display shadow-lg shadow-primary/20">+</button>
+        <button onClick={onSub} className="flex-1 bg-white/5 text-text-muted py-2 rounded-xl active:scale-90 transition-all font-bold text-xs uppercase">{isSpecial ? 'ATT' : '-'}</button>
       </div>
     </div>
   );
@@ -961,12 +981,12 @@ function StatButton({ label, value, onAdd, onSub, isSpecial }: { label: string, 
 
 function StatControl({ label, value, onAdd, onSub }: { label: string, value: number, onAdd: () => void, onSub: () => void }) {
   return (
-    <div className="bg-dark p-1.5 rounded-xl border border-white/5 flex flex-col items-center">
-      <div className="text-[8px] text-text-muted uppercase mb-0.5">{label}</div>
-      <div className="text-lg font-bold mb-1">{value}</div>
-      <div className="flex gap-1 w-full">
-        <button onClick={onAdd} className="flex-1 bg-primary/20 text-primary py-1 rounded-lg active:scale-90 transition-transform font-bold text-xs">+</button>
-        <button onClick={onSub} className="flex-1 bg-white/5 text-text-muted py-1 rounded-lg active:scale-90 transition-transform font-bold text-xs">-</button>
+    <div className="bg-dark/30 p-2 rounded-xl border border-white/5 flex flex-col items-center">
+      <div className="text-[9px] text-text-muted font-bold uppercase mb-1 tracking-tight">{label}</div>
+      <div className="text-lg font-display font-black mb-2 text-white italic">{value}</div>
+      <div className="flex gap-1.5 w-full">
+        <button onClick={onAdd} className="flex-1 bg-primary/10 text-primary py-1.5 rounded-lg active:scale-90 transition-all font-black text-sm border border-primary/20">+</button>
+        <button onClick={onSub} className="flex-1 bg-white/5 text-text-muted py-1.5 rounded-lg active:scale-90 transition-all font-bold text-xs">-</button>
       </div>
     </div>
   );
@@ -985,12 +1005,12 @@ function TabButton({ active, icon, label, onClick }: { active: boolean, icon: an
   return (
     <button 
       onClick={onClick}
-      className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${
-        active ? 'bg-primary text-white shadow-lg' : 'text-text-muted hover:text-white'
+      className={`px-6 py-3 rounded-xl flex items-center gap-2 transition-all font-display font-black uppercase italic tracking-tight ${
+        active ? 'bg-primary text-white shadow-xl shadow-primary/30' : 'text-text-muted hover:text-white hover:bg-white/5'
       }`}
     >
       {icon}
-      <span className="font-bold text-sm">{label}</span>
+      <span className="text-sm">{label}</span>
     </button>
   );
 }
@@ -1006,7 +1026,7 @@ function MobileTabButton({ active, icon, label, onClick }: { active: boolean, ic
       <div className={`p-2 rounded-2xl transition-all ${active ? 'bg-primary/10' : ''}`}>
         {icon}
       </div>
-      <span className="text-[10px] uppercase font-bold tracking-widest">{label}</span>
+      <span className="text-[10px] font-display font-black uppercase italic tracking-tighter">{label}</span>
     </button>
   );
 }

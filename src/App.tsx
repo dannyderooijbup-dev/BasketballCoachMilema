@@ -53,8 +53,26 @@ export default function App() {
 
     if (savedPlayers) {
       let parsedPlayers: Player[] = JSON.parse(savedPlayers);
+
+      // Auto-migrate positions
+      const positionMap: Record<string, string> = {
+        'PG': 'Guard', 'SG': 'Guard',
+        'SF': 'Forward', 'PF': 'Forward',
+        'C': 'Big'
+      };
+
       // Restore states if app was closed while timers were running
       parsedPlayers = parsedPlayers.map(p => {
+        // Migration
+        if (positionMap[p.position]) {
+          p.position = positionMap[p.position];
+        }
+
+        // Ensure lastActions exists
+        if (!p.lastActions) {
+          p.lastActions = [];
+        }
+
         if (p.isRunning && p.lastStartTime) {
           const now = Date.now();
           const extraTime = now - p.lastStartTime;
@@ -102,7 +120,8 @@ export default function App() {
       isRunning: false,
       lastStartTime: null,
       sessions: [],
-      stats: { ...INITIAL_STATS }
+      stats: { ...INITIAL_STATS },
+      lastActions: []
     };
     setPlayers([...players, newPlayer]);
   };
@@ -174,43 +193,88 @@ export default function App() {
   };
 
   const updateStat = (id: string, stat: keyof Player['stats'], delta: number) => {
+    if (delta < 0) return; // Prevent manual decrement, use undo instead
+
     setPlayers(prev => prev.map(p => {
       if (p.id !== id) return p;
       
       const newStats = { ...p.stats };
-      
+      const newActions = [...(p.lastActions || [])];
+
       // Advanced Logic
-      if (stat === 'threeFgm' && delta > 0) {
-        newStats.threeFgm += delta;
-        newStats.threeFga += delta;
-        newStats.fgm += delta;
-        newStats.fga += delta;
-        newStats.points += (3 * delta);
-      } else if (stat === 'fgm' && delta > 0) {
-        newStats.fgm += delta;
-        newStats.fga += delta;
-        newStats.points += (2 * delta);
-      } else if (stat === 'ftm' && delta > 0) {
-        newStats.ftm += delta;
-        newStats.fta += delta;
-        newStats.points += delta;
-      } else if (delta > 0 && (stat === 'fga' || stat === 'threeFga' || stat === 'fta')) {
-        newStats[stat] += delta;
-      } else if (delta > 0) {
-        newStats[stat] = Math.max(0, newStats[stat] + delta);
-        if (stat === 'points') {
-          // Manual points correction doesn't affect other stats
-        }
-      } else if (delta < 0) {
-        // Simple decrement for undo
-        newStats[stat] = Math.max(0, newStats[stat] + delta);
-        // Important: this is a simple undo, doesn't revert complex logic fully 
-        // to keep it simple unless user asks for a full transaction-based undo
+      if (stat === 'threeFgm') {
+        newStats.threeFgm += 1;
+        newStats.threeFga += 1;
+        newStats.fgm += 1;
+        newStats.fga += 1;
+        newStats.points += 3;
+        newActions.push({ type: 'threeFgm', delta: 1, compound: true });
+      } else if (stat === 'threeFga') {
+        newStats.threeFga += 1;
+        newStats.fga += 1;
+        newActions.push({ type: 'threeFga', delta: 1, compound: true });
+      } else if (stat === 'fgm') {
+        newStats.fgm += 1;
+        newStats.fga += 1;
+        newStats.points += 2;
+        newActions.push({ type: 'fgm', delta: 1, compound: true });
+      } else if (stat === 'ftm') {
+        newStats.ftm += 1;
+        newStats.fta += 1;
+        newStats.points += 1;
+        newActions.push({ type: 'ftm', delta: 1, compound: true });
+      } else if (stat === 'fga' || stat === 'fta') {
+        newStats[stat] += 1;
+        newActions.push({ type: stat, delta: 1, compound: false });
+      } else {
+        newStats[stat] = Math.max(0, newStats[stat] + 1);
+        newActions.push({ type: stat, delta: 1, compound: false });
       }
 
       return {
         ...p,
-        stats: newStats
+        stats: newStats,
+        lastActions: newActions
+      };
+    }));
+  };
+
+  const undoLastAction = (id: string) => {
+    setPlayers(prev => prev.map(p => {
+      if (p.id !== id || !p.lastActions || p.lastActions.length === 0) return p;
+      
+      const lastActions = [...p.lastActions];
+      const action = lastActions.pop();
+      if (!action) return p;
+
+      const newStats = { ...p.stats };
+      const { type, delta } = action;
+
+      if (type === 'threeFgm') {
+        newStats.threeFgm = Math.max(0, newStats.threeFgm - 1);
+        newStats.threeFga = Math.max(0, newStats.threeFga - 1);
+        newStats.fgm = Math.max(0, newStats.fgm - 1);
+        newStats.fga = Math.max(0, newStats.fga - 1);
+        newStats.points = Math.max(0, newStats.points - 3);
+      } else if (type === 'threeFga') {
+        newStats.threeFga = Math.max(0, newStats.threeFga - 1);
+        newStats.fga = Math.max(0, newStats.fga - 1);
+      } else if (type === 'fgm') {
+        newStats.fgm = Math.max(0, newStats.fgm - 1);
+        newStats.fga = Math.max(0, newStats.fga - 1);
+        newStats.points = Math.max(0, newStats.points - 2);
+      } else if (type === 'ftm') {
+        newStats.ftm = Math.max(0, newStats.ftm - 1);
+        newStats.fta = Math.max(0, newStats.fta - 1);
+        newStats.points = Math.max(0, newStats.points - 1);
+      } else {
+        newStats[type] = Math.max(0, (newStats[type] as number) - delta);
+      }
+
+      return {
+        ...p,
+        stats: newStats,
+        lastActions: lastActions
       };
     }));
   };
@@ -272,7 +336,8 @@ export default function App() {
       isRunning: false,
       lastStartTime: null,
       sessions: [],
-      stats: { ...INITIAL_STATS }
+      stats: { ...INITIAL_STATS },
+      lastActions: []
     })));
     setIsMatchActive(true);
     setShowMatchStartModal(false);
@@ -319,7 +384,8 @@ export default function App() {
       isRunning: false,
       lastStartTime: null,
       sessions: [],
-      stats: { ...INITIAL_STATS }
+      stats: { ...INITIAL_STATS },
+      lastActions: []
     })));
     setIsMatchActive(false);
     setGameClockRunning(false);
@@ -415,7 +481,7 @@ export default function App() {
                   <StatControl label="STL" value={player.stats.steals} onAdd={() => updateStat(player.id, 'steals', 1)} onSub={() => updateStat(player.id, 'steals', -1)} />
                   <StatControl label="BLK" value={player.stats.blocks} onAdd={() => updateStat(player.id, 'blocks', 1)} onSub={() => updateStat(player.id, 'blocks', -1)} />
                   <StatControl label="TO" value={player.stats.turnovers} onAdd={() => updateStat(player.id, 'turnovers', 1)} onSub={() => updateStat(player.id, 'turnovers', -1)} />
-                  <button onClick={() => updateStat(player.id, 'points', -1)} className="bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-text-muted">
+                  <button onClick={() => undoLastAction(player.id)} className="bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-text-muted">
                     <RotateCcw size={16} className="mr-1" /> Undo
                   </button>
                 </div>
@@ -510,12 +576,26 @@ export default function App() {
                 <p className="text-xs text-text-muted uppercase">{player.position}</p>
               </div>
             </div>
-            <button 
-              onClick={() => removePlayer(player.id)}
-              className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
-            >
-              <Trash2 size={18} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button 
+                onClick={() => {
+                  setEditingPlayer(player);
+                  setNewPlayerName(player.name);
+                  setNewPlayerNumber(player.number);
+                  setNewPlayerPosition(player.position as string);
+                  setShowEditPlayerModal(true);
+                }}
+                className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors"
+              >
+                <Plus size={18} />
+              </button>
+              <button 
+                onClick={() => removePlayer(player.id)}
+                className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -574,9 +654,19 @@ export default function App() {
   };
 
   const [showAddPlayerModal, setShowAddPlayerModal] = useState(false);
+  const [showEditPlayerModal, setShowEditPlayerModal] = useState(false);
+  const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerNumber, setNewPlayerNumber] = useState('');
-  const [newPlayerPosition, setNewPlayerPosition] = useState('PG');
+  const [newPlayerPosition, setNewPlayerPosition] = useState('Guard');
+
+  const updatePlayer = (id: string, name: string, number: string, position: string) => {
+    setPlayers(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      return { ...p, name, number, position };
+    }));
+  };
 
   return (
     <div className="min-h-screen pb-24 md:pb-0 md:pt-6 max-w-5xl mx-auto px-4">
@@ -691,7 +781,7 @@ export default function App() {
                       onChange={(e) => setNewPlayerPosition(e.target.value)}
                       className="w-full bg-dark border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-primary transition-colors"
                     >
-                      {['PG', 'SG', 'SF', 'PF', 'C'].map(p => <option key={p} value={p}>{p}</option>)}
+                      {['Guard', 'Forward', 'Big'].map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
                   </div>
                 </div>
@@ -788,6 +878,65 @@ export default function App() {
                     ))}
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+        {showEditPlayerModal && editingPlayer && (
+          <div className="fixed inset-0 bg-dark/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-surface w-full max-w-md p-6 rounded-3xl border border-white/10 shadow-2xl space-y-6"
+            >
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-bold">Speler Bewerken</h3>
+                <button onClick={() => setShowEditPlayerModal(false)} className="text-text-muted hover:text-white"><X /></button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm text-text-muted mb-2 uppercase font-medium">Naam</label>
+                  <input 
+                    type="text" 
+                    value={newPlayerName}
+                    onChange={(e) => setNewPlayerName(e.target.value)}
+                    className="w-full bg-dark border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-primary transition-colors"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-text-muted mb-2 uppercase font-medium">Rugnummer</label>
+                    <input 
+                      type="text" 
+                      value={newPlayerNumber}
+                      onChange={(e) => setNewPlayerNumber(e.target.value)}
+                      className="w-full bg-dark border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-primary transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-text-muted mb-2 uppercase font-medium">Positie</label>
+                    <select 
+                      value={newPlayerPosition}
+                      onChange={(e) => setNewPlayerPosition(e.target.value)}
+                      className="w-full bg-dark border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-primary transition-colors"
+                    >
+                      {['Guard', 'Forward', 'Big'].map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => {
+                    updatePlayer(editingPlayer.id, newPlayerName, newPlayerNumber, newPlayerPosition);
+                    setShowEditPlayerModal(false);
+                    setEditingPlayer(null);
+                    setNewPlayerName('');
+                    setNewPlayerNumber('');
+                  }} 
+                  className="w-full btn-primary"
+                >
+                  Wijzigingen Opslaan
+                </button>
               </div>
             </motion.div>
           </div>

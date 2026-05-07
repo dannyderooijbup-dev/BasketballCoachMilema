@@ -1,9 +1,7 @@
 export enum Position {
-  PG = 'PG',
-  SG = 'SG',
-  SF = 'SF',
-  PF = 'PF',
-  C = 'C'
+  Guard = 'Guard',
+  Forward = 'Forward',
+  Big = 'Big'
 }
 
 export interface Session {
@@ -27,6 +25,12 @@ export interface Stats {
   fta: number;
 }
 
+export interface PlayerAction {
+  type: keyof Stats;
+  delta: number;
+  compound?: boolean; // To track if this was part of a 3P or FG increment
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -37,6 +41,7 @@ export interface Player {
   lastStartTime: number | null;
   sessions: Session[];
   stats: Stats;
+  lastActions: PlayerAction[];
 }
 
 export interface MatchHistoryEntry {

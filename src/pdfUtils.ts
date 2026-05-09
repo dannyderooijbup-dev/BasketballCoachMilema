@@ -54,3 +54,43 @@ export function exportMatchToPDF(match: MatchHistoryEntry) {
 
   doc.save(`match_${match.opponent}_${new Date(match.date).toISOString().split('T')[0]}.pdf`);
 }
+
+export function exportSeasonStatsToPDF(stats: any[]) {
+  const doc = new jsPDF();
+  
+  // Header
+  doc.setFontSize(22);
+  doc.setTextColor(255, 106, 0); // Primary orange
+  doc.text('BASKETBALL COACH - GAMESTATS', 14, 20);
+  
+  doc.setFontSize(16);
+  doc.setTextColor(51, 65, 85);
+  doc.text('SEIZOENSRAPPORTAGE', 14, 30);
+  
+  doc.setFontSize(10);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}`, 14, 38);
+
+  const tableData = stats.map(s => [
+    `#${s.number} ${s.name}`,
+    s.matches,
+    formatTime(s.totalTime),
+    `${Math.round(s.points / s.matches)} avg`,
+    calculatePercentage(s.fgm, s.fga),
+    calculatePercentage(s.threeFgm, s.threeFga),
+    calculatePercentage(s.ftm, s.fta),
+    (s.rebounds / s.matches).toFixed(1),
+    (s.assists / s.matches).toFixed(1)
+  ]);
+
+  autoTable(doc, {
+    startY: 45,
+    head: [['Speler', 'W', 'Totaal Tijd', 'PTN AVG', 'FG%', '3P%', 'FT%', 'REB AVG', 'AST AVG']],
+    body: tableData,
+    headStyles: { fillColor: [255, 106, 0] },
+    alternateRowStyles: { fillColor: [245, 245, 245] },
+    margin: { top: 45 },
+  });
+
+  doc.save(`seizoensstatistieken_${new Date().toISOString().split('T')[0]}.pdf`);
+}

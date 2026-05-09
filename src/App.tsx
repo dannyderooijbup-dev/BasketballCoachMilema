@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { Player, MatchHistoryEntry, Tab, Position, Session } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
-import { exportMatchToPDF } from './pdfUtils';
+import { exportMatchToPDF, exportSeasonStatsToPDF } from './pdfUtils';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -619,7 +619,17 @@ export default function App() {
     const stats = seasonStats();
     return (
       <div className="space-y-6">
-        <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">Seizoensstatistieken</h2>
+        <div className="flex justify-between items-center bg-surface/50 p-4 rounded-2xl border border-white/5 backdrop-blur-sm">
+          <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">Seizoensstatistieken</h2>
+          {stats.length > 0 && (
+            <button 
+              onClick={() => exportSeasonStatsToPDF(stats)}
+              className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-4 py-2 rounded-xl text-xs sm:text-sm font-black italic uppercase font-display transition-all active:scale-95 border border-primary/20 shadow-lg shadow-primary/5"
+            >
+              <Download size={16} /> <span className="hidden xs:inline">PDF Export</span>
+            </button>
+          )}
+        </div>
         <div className="overflow-hidden bg-surface rounded-2xl sm:rounded-3xl border border-white/10 shadow-2xl">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[600px]">
@@ -1008,7 +1018,7 @@ function Logo() {
       </div>
       <div className="mt-1.5 flex items-center gap-1.5">
         <div className="h-[1px] w-4 bg-primary/30 rounded-full block md:hidden"></div>
-        <span className="text-[9px] sm:text-[10px] font-black text-text-muted uppercase tracking-[0.3em] font-sans">
+        <span className="text-[10px] sm:text-[12px] font-black text-text-muted uppercase tracking-[0.3em] font-sans">
           Game <span className="text-primary">Stats</span>
         </span>
         <div className="h-[1px] w-4 bg-primary/30 rounded-full"></div>

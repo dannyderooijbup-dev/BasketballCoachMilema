@@ -4,9 +4,9 @@
 @theme {
   --breakpoint-xs: 480px;
   --color-primary: #FF6A00;
-  --color-dark: #0D1117;
-  --color-surface: #1B2129;
-  --color-text-muted: #8E9BAF;
+  --color-dark: #0F172A;
+  --color-surface: #1E293B;
+  --color-text-muted: #94A3B8;
   
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Outfit", sans-serif;

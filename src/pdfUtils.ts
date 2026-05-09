@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { MatchHistoryEntry } from './types';
 import { formatTime, formatDate, calculatePercentage } from './utils';
 
@@ -43,7 +43,7 @@ export function exportMatchToPDF(match: MatchHistoryEntry) {
     ];
   });
 
-  (doc as any).autoTable({
+  autoTable(doc, {
     startY: 55,
     head: [['Speler', 'Tijd', 'PTN', 'FG', '3P', 'FT', 'AST', 'REB', 'STL', 'BLK', 'TO']],
     body: tableData,

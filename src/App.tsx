@@ -686,11 +686,11 @@ export default function App() {
   return (
     <div className="min-h-screen pb-24 md:pb-0 md:pt-6 max-w-5xl mx-auto px-4 md:px-6">
       <header className="py-4 sm:py-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="flex flex-col gap-1 items-center md:items-start">
-          <div className="flex items-center gap-4">
-            <Logo />
-          </div>
-          <p className="text-[9px] sm:text-[10px] text-text-muted uppercase tracking-[0.2em] mt-1 text-center md:text-left">Milema Webdesign × Jeremy Hooi</p>
+        <div className="flex flex-col items-center md:items-start">
+          <Logo />
+          <p className="text-[8px] sm:text-[9px] text-text-muted uppercase tracking-[0.2em] mt-3 py-1 px-3 bg-white/5 border border-white/5 rounded-full text-center md:text-left">
+            Milema Webdesign <span className="text-primary/50 mx-1">×</span> Jeremy Hooi
+          </p>
         </div>
         <div className="hidden md:flex bg-surface rounded-2xl p-1 border border-white/5 backdrop-blur-sm self-center">
           <TabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Timer size={18} />} label="Match" />
@@ -999,13 +999,21 @@ function HistoryStat({ label, value }: { label: string, value: number | string }
 
 function Logo() {
   return (
-    <h1 className="text-lg xs:text-xl sm:text-2xl font-black text-primary tracking-tighter uppercase italic font-display flex flex-col sm:flex-row sm:gap-2 items-center sm:items-start text-center sm:text-left">
-      <span>Basketball Coach</span>
-      <div className="flex items-center gap-2">
-        <span className="hidden sm:inline">-</span>
-        <span className="text-white">Game Stats</span>
+    <div className="flex flex-col items-center md:items-start select-none">
+      <div className="flex items-baseline gap-1">
+        <h1 className="text-xl sm:text-2xl font-black font-display italic uppercase tracking-tighter leading-none">
+          <span className="text-white">Basketball</span>
+          <span className="text-primary ml-1">Coach</span>
+        </h1>
       </div>
-    </h1>
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <div className="h-[1px] w-4 bg-primary/30 rounded-full block md:hidden"></div>
+        <span className="text-[9px] sm:text-[10px] font-black text-text-muted uppercase tracking-[0.3em] font-sans">
+          Game <span className="text-primary">Stats</span>
+        </span>
+        <div className="h-[1px] w-4 bg-primary/30 rounded-full"></div>
+      </div>
+    </div>
   );
 }
 

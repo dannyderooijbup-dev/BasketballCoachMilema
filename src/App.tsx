@@ -738,11 +738,8 @@ export default function App() {
   return (
     <div className="min-h-screen pb-24 md:pb-0 md:pt-6 max-w-5xl mx-auto px-4 md:px-6">
       <header className="py-4 sm:py-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="flex flex-col items-center md:items-start">
+        <div className="flex flex-col items-center md:items-start text-center md:text-left">
           <Logo />
-          <p className="text-[8px] sm:text-[9px] text-text-muted uppercase tracking-[0.2em] mt-3 py-1 px-3 bg-white/5 border border-white/5 rounded-full text-center md:text-left">
-            Milema Webdesign <span className="text-primary/50 mx-1">×</span> Jeremy Hooi
-          </p>
         </div>
         <div className="hidden md:flex bg-surface rounded-2xl p-1 border border-white/5 backdrop-blur-sm self-center">
           <TabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Timer size={18} />} label="Match" />

@@ -36,6 +36,8 @@ export default function App() {
 
   // Game Clock
   const [gameClockRunning, setGameClockRunning] = useState(false);
+  const [matchTime, setMatchTime] = useState(0); // Accumulated time in ms
+  const [matchClockStartTime, setMatchClockStartTime] = useState<number | null>(null);
 
   // Interval for live timer re-renders
   const [_, setTick] = useState(0);
@@ -50,6 +52,8 @@ export default function App() {
     const savedMatchActive = localStorage.getItem('isMatchActive');
     const savedOpponent = localStorage.getItem('opponent');
     const savedClock = localStorage.getItem('gameClockRunning');
+    const savedMatchTime = localStorage.getItem('matchTime');
+    const savedMatchClockStart = localStorage.getItem('matchClockStartTime');
 
     if (savedPlayers) {
       let parsedPlayers: Player[] = JSON.parse(savedPlayers);
@@ -90,6 +94,8 @@ export default function App() {
     if (savedMatchActive) setIsMatchActive(JSON.parse(savedMatchActive));
     if (savedOpponent) setOpponent(savedOpponent);
     if (savedClock) setGameClockRunning(JSON.parse(savedClock));
+    if (savedMatchTime) setMatchTime(JSON.parse(savedMatchTime));
+    if (savedMatchClockStart) setMatchClockStartTime(JSON.parse(savedMatchClockStart));
 
     initialLoadDone.current = true;
   }, []);
@@ -102,7 +108,9 @@ export default function App() {
     localStorage.setItem('isMatchActive', JSON.stringify(isMatchActive));
     localStorage.setItem('opponent', opponent);
     localStorage.setItem('gameClockRunning', JSON.stringify(gameClockRunning));
-  }, [players, history, isMatchActive, opponent, gameClockRunning]);
+    localStorage.setItem('matchTime', JSON.stringify(matchTime));
+    localStorage.setItem('matchClockStartTime', JSON.stringify(matchClockStartTime));
+  }, [players, history, isMatchActive, opponent, gameClockRunning, matchTime, matchClockStartTime]);
 
   // Tick for UI updates
   useEffect(() => {
@@ -166,6 +174,15 @@ export default function App() {
     const newRunningState = !gameClockRunning;
     setGameClockRunning(newRunningState);
     const now = Date.now();
+
+    if (!newRunningState) {
+      if (matchClockStartTime) {
+        setMatchTime(prev => prev + (now - matchClockStartTime));
+        setMatchClockStartTime(null);
+      }
+    } else {
+      setMatchClockStartTime(now);
+    }
 
     setPlayers(prev => prev.map(p => {
       if (!p.isRunning) return p;
@@ -340,6 +357,8 @@ export default function App() {
       lastActions: []
     })));
     setIsMatchActive(true);
+    setMatchTime(0);
+    setMatchClockStartTime(null);
     setShowMatchStartModal(false);
   };
 
@@ -360,20 +379,25 @@ export default function App() {
       return p;
     });
 
-    const totalMatchTime = finalPlayers.reduce((acc, p) => acc + p.totalTime, 0);
+    let finalMatchTime = matchTime;
+    if (gameClockRunning && matchClockStartTime) {
+      finalMatchTime += (now - matchClockStartTime);
+    }
 
     const newEntry: MatchHistoryEntry = {
       matchId: crypto.randomUUID(),
       date: now,
       opponent,
       players: finalPlayers,
-      totalMatchTime
+      totalMatchTime: finalMatchTime
     };
 
     setHistory([newEntry, ...history]);
     setPlayers(finalPlayers); // Update local state for reset
     setIsMatchActive(false);
     setGameClockRunning(false);
+    setMatchTime(0);
+    setMatchClockStartTime(null);
     setOpponent('');
   };
 
@@ -389,35 +413,13 @@ export default function App() {
     })));
     setIsMatchActive(false);
     setGameClockRunning(false);
+    setMatchTime(0);
+    setMatchClockStartTime(null);
     setOpponent('');
   };
 
   const renderDashboard = () => (
     <div className="space-y-6">
-      {/* Game Clock Control */}
-      <div className="bg-surface p-4 sm:p-6 rounded-2xl shadow-xl border border-white/10 flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-4 w-full sm:w-auto">
-          <div className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl ${gameClockRunning ? 'bg-primary shadow-[0_0_20px_rgba(255,106,0,0.4)]' : 'bg-white/5'} transition-all`}>
-            <Timer size={24} className={`sm:w-8 sm:h-8 ${gameClockRunning ? 'text-white' : 'text-text-muted'}`} />
-          </div>
-          <div>
-            <h2 className="text-xl sm:text-3xl font-black font-display italic uppercase tracking-tighter">Wedstrijdklok</h2>
-            <p className="text-text-muted text-[10px] sm:text-xs uppercase tracking-widest font-medium">{gameClockRunning ? 'Klok Loopt' : 'Klok Gestopt'}</p>
-          </div>
-        </div>
-        <button 
-          onClick={toggleGameClock}
-          className={`w-full sm:w-auto flex items-center justify-center gap-2 sm:gap-3 px-6 sm:px-10 py-4 sm:py-5 rounded-xl sm:rounded-2xl font-black font-display uppercase italic transition-all active:scale-95 ${
-            gameClockRunning 
-              ? 'bg-red-500/10 text-red-500 border border-red-500/20' 
-              : 'bg-primary text-white shadow-xl shadow-primary/30 hover:scale-[1.02]'
-          }`}
-        >
-          {gameClockRunning ? <Pause size={20} strokeWidth={3} className="sm:w-6 sm:h-6" /> : <Play size={20} fill="white" strokeWidth={3} className="sm:w-6 sm:h-6" />}
-          <span className="text-sm sm:text-base">{gameClockRunning ? 'Pauze' : 'Start Klok'}</span>
-        </button>
-      </div>
-
       <div className="flex flex-col sm:flex-row gap-4 sm:justify-between sm:items-center bg-surface p-4 sm:p-6 rounded-2xl shadow-xl border border-white/5">
         <div>
           <h2 className="text-xl sm:text-2xl font-display font-black text-white flex items-center gap-2 italic tracking-tighter">
@@ -430,15 +432,48 @@ export default function App() {
         </div>
         <div className="flex gap-2">
           {!isMatchActive ? (
-            <button onClick={() => setShowMatchStartModal(true)} className="w-full sm:w-auto btn-primary flex items-center justify-center gap-2 py-3 px-6">
-              <Play size={18} /> <span className="text-sm">Start Match</span>
+            <button 
+              onClick={() => setShowMatchStartModal(true)} 
+              className="w-full sm:w-auto bg-primary hover:bg-primary/90 text-white font-display font-black italic uppercase tracking-widest flex items-center justify-center gap-2 py-5 px-10 rounded-2xl transition-all active:scale-95 shadow-xl shadow-primary/20"
+            >
+              <Play size={20} fill="white" /> <span className="text-base sm:text-lg">Start Match</span>
             </button>
           ) : (
-            <button onClick={endMatch} className="w-full sm:w-auto bg-red-500 hover:bg-red-600 text-white font-black italic uppercase font-display py-3 px-6 rounded-xl transition-all active:scale-95 text-sm">
+            <button 
+              onClick={endMatch} 
+              className="w-full sm:w-auto bg-red-500 hover:bg-red-600 text-white font-display font-black italic uppercase tracking-widest py-5 px-10 rounded-2xl transition-all active:scale-95 text-base sm:text-lg shadow-xl shadow-red-500/20"
+            >
               Beëindigen
             </button>
           )}
         </div>
+      </div>
+
+      {/* Game Clock Control */}
+      <div className="bg-surface p-4 sm:p-6 rounded-2xl shadow-xl border border-white/10 flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div className="flex items-center gap-4 w-full sm:w-auto">
+          <div className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl ${gameClockRunning ? 'bg-primary shadow-[0_0_20px_rgba(255,106,0,0.4)]' : (isMatchActive ? 'bg-white/5' : 'bg-white/2 opacity-20')} transition-all`}>
+            <Timer size={24} className={`sm:w-8 sm:h-8 ${gameClockRunning ? 'text-white' : (isMatchActive ? 'text-text-muted' : 'text-slate-700')}`} />
+          </div>
+          <div className={!isMatchActive ? 'opacity-30' : ''}>
+            <h2 className="text-xl sm:text-3xl font-black font-display italic uppercase tracking-tighter">Wedstrijdklok</h2>
+            <p className="text-text-muted text-[10px] sm:text-xs uppercase tracking-widest font-medium">{gameClockRunning ? 'Klok Loopt' : (isMatchActive ? 'Klok Gestopt' : 'Wacht op match...')}</p>
+          </div>
+        </div>
+        <button 
+          onClick={toggleGameClock}
+          disabled={!isMatchActive}
+          className={`w-full sm:w-auto flex items-center justify-center gap-2 sm:gap-3 px-6 sm:px-10 py-4 sm:py-5 rounded-xl sm:rounded-2xl font-black font-display uppercase italic transition-all ${
+            !isMatchActive
+              ? 'bg-white/5 text-text-muted cursor-not-allowed opacity-30 grayscale'
+              : gameClockRunning 
+                ? 'bg-red-500/10 text-red-500 border border-red-500/20 active:scale-95' 
+                : 'bg-primary text-white shadow-xl shadow-primary/30 hover:scale-[1.02] active:scale-95'
+          }`}
+        >
+          {gameClockRunning ? <Pause size={20} strokeWidth={3} className="sm:w-6 sm:h-6" /> : <Play size={20} fill={isMatchActive ? "white" : "currentColor"} strokeWidth={3} className="sm:w-6 sm:h-6" />}
+          <span className="text-xs sm:text-sm">{gameClockRunning ? 'Pauze' : 'Start Klok'}</span>
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -519,18 +554,25 @@ export default function App() {
       <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">Wedstrijdhistorie</h2>
       <div className="space-y-3">
         {history.map(match => (
-          <button 
+          <div 
             key={match.matchId}
             onClick={() => setSelectedMatch(match)}
-            className="w-full bg-surface hover:bg-white/5 transition-all p-3 sm:p-4 rounded-2xl flex items-center justify-between shadow-lg border border-white/5 text-left active:scale-[0.98]"
+            className="w-full bg-surface hover:bg-white/5 transition-all p-3 sm:p-4 rounded-2xl flex items-center justify-between shadow-lg border border-white/5 text-left cursor-pointer group active:scale-[0.98]"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedMatch(match); }}
           >
             <div className="flex items-center gap-3 sm:gap-4 overflow-hidden">
-              <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+              <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
                 <Trophy size={20} className="sm:w-6 sm:h-6" />
               </div>
               <div className="truncate">
                 <h3 className="font-display font-black uppercase italic tracking-tight text-base sm:text-lg truncate">{match.opponent}</h3>
-                <p className="text-[9px] sm:text-[10px] text-text-muted uppercase tracking-widest font-bold">{formatDate(match.date)}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-[9px] sm:text-[10px] text-text-muted uppercase tracking-widest font-bold">{formatDate(match.date)}</p>
+                  <span className="text-[9px] sm:text-[10px] text-primary/60 font-black">•</span>
+                  <p className="text-[9px] sm:text-[10px] text-primary font-black uppercase italic tracking-widest">{formatTime(match.totalMatchTime)}</p>
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-2 sm:gap-4 text-right flex-shrink-0">
@@ -540,14 +582,14 @@ export default function App() {
               </div>
               <button 
                 onClick={(e) => { e.stopPropagation(); deleteMatch(match.matchId); }}
-                className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors active:scale-90"
+                className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors active:scale-90 relative z-10"
                 title="Verwijderen"
               >
                 <Trash2 size={16} className="sm:w-[18px] sm:h-[18px]" />
               </button>
-              <ChevronRight className="text-text-muted w-4 h-4 sm:w-5 sm:h-5" />
+              <ChevronRight className="text-text-muted w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-1 transition-transform" />
             </div>
-          </button>
+          </div>
         ))}
         {history.length === 0 && (
           <div className="py-20 text-center text-text-muted">
@@ -860,7 +902,7 @@ export default function App() {
                     <div className="text-2xl sm:text-4xl font-display font-black uppercase italic tracking-tighter truncate max-w-[200px] sm:max-w-none">{selectedMatch.opponent}</div>
                   </div>
                   <div className="text-center sm:text-right">
-                    <p className="text-[10px] text-text-muted uppercase tracking-[0.2em] font-bold">Totaal Speeltijd</p>
+                    <p className="text-[10px] text-text-muted uppercase tracking-[0.2em] font-bold">Wedstrijdduur</p>
                     <p className="text-2xl sm:text-3xl font-mono text-primary font-black italic">{formatTime(selectedMatch.totalMatchTime)}</p>
                   </div>
                 </div>

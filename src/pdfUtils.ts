@@ -20,7 +20,7 @@ export function exportMatchToPDF(match: MatchHistoryEntry) {
   doc.setTextColor(100, 100, 100);
   doc.text(`Tegenstander: ${match.opponent}`, 14, 30);
   doc.text(`Datum: ${formatDate(match.date)}`, 14, 37);
-  doc.text(`Totaal Team Speeltijd: ${formatTime(match.totalMatchTime)}`, 14, 44);
+  doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}`, 14, 44);
 
   // Stats Table
   const tableData = match.players.map(p => {

@@ -735,17 +735,25 @@ export default function App() {
 
       <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {players.map(player => (
-          <div key={player.id} className="bg-surface p-3 sm:p-4 rounded-2xl border border-white/5 shadow-lg flex items-center justify-between group">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary text-white flex items-center justify-center font-black italic text-base sm:text-lg shadow-inner">
+          <div key={player.id} className="bg-surface p-3 sm:p-4 rounded-2xl border border-white/5 shadow-lg flex items-center justify-between gap-2 group min-w-0">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary text-white flex items-center justify-center font-black italic text-base sm:text-lg shadow-inner flex-shrink-0">
                 #{player.number}
               </div>
-              <div className="truncate max-w-[120px] sm:max-w-none">
-                <h3 className="font-bold text-sm sm:text-base truncate">{player.name}</h3>
+              <div className="min-w-0 flex-1">
+                <h3 className={`font-bold transition-all break-words leading-tight ${
+                  player.name.length > 20 
+                    ? 'text-xs sm:text-sm' 
+                    : player.name.length > 12 
+                      ? 'text-sm sm:text-base' 
+                      : 'text-base sm:text-lg'
+                }`} title={player.name}>
+                  {player.name}
+                </h3>
                 <p className="text-[10px] text-text-muted uppercase font-bold">{player.position}</p>
               </div>
             </div>
-            <div className="flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
               <button 
                 onClick={() => {
                   setEditingPlayer(player);
@@ -1078,7 +1086,7 @@ export default function App() {
                 <div className="bg-primary/10 p-5 sm:p-8 rounded-2xl sm:rounded-[2rem] flex flex-col sm:flex-row items-center justify-between gap-4 shadow-inner border border-primary/10">
                   <div className="flex items-center gap-4 sm:gap-8">
                     <div className="text-3xl sm:text-5xl font-display font-black italic text-primary/30 tracking-tighter">VS</div>
-                    <div className="text-2xl sm:text-4xl font-display font-black uppercase italic tracking-tighter truncate max-w-[200px] sm:max-w-none">{selectedMatch.opponent}</div>
+                    <div className="text-[21px] sm:text-[33px] font-display font-black uppercase italic tracking-tighter truncate max-w-[200px] sm:max-w-none">{selectedMatch.opponent}</div>
                   </div>
                   <div className="text-center sm:text-right">
                     <p className="text-[10px] text-text-muted uppercase tracking-[0.2em] font-bold">Wedstrijdduur</p>

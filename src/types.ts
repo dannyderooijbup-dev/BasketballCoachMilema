@@ -50,6 +50,7 @@ export interface MatchHistoryEntry {
   opponent: string;
   players: Player[];
   totalMatchTime: number;
+  starting5?: string[];
 }
 
 export type Tab = 'dashboard' | 'history' | 'players' | 'season';

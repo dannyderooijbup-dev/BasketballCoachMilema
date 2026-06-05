@@ -11,16 +11,44 @@ import { formatTime, formatDate, calculatePercentage } from './utils';
 export function exportMatchToPDF(match: MatchHistoryEntry) {
   const doc = new jsPDF();
   
+  const paintPage = () => {
+    const pageSize = doc.internal.pageSize;
+    const w = pageSize.width ? pageSize.width : pageSize.getWidth();
+    const h = pageSize.height ? pageSize.height : pageSize.getHeight();
+    // Dark background (#0F172A)
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, w, h, 'F');
+    // Accent orange strip on left edge
+    doc.setFillColor(255, 106, 0);
+    doc.rect(0, 0, 4, h, 'F');
+  };
+
+  // Paint the first page
+  paintPage();
+  
   // Header
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(22);
   doc.setTextColor(255, 106, 0); // Primary orange
-  doc.text('BASKETBALL COACH - GAMESTATS', 14, 20);
+  doc.text('BASKETBALL COACH', 14, 20);
   
-  doc.setFontSize(12);
-  doc.setTextColor(100, 100, 100);
-  doc.text(`Tegenstander: ${match.opponent}`, 14, 30);
-  doc.text(`Datum: ${formatDate(match.date)}`, 14, 37);
-  doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}`, 14, 44);
+  doc.setFontSize(9);
+  doc.setTextColor(148, 163, 184); // Muted slate text
+  doc.text('OFFICIËLE WEDSTRIJD STATISTIEKEN', 14, 26);
+
+  // Separator line
+  doc.setDrawColor(255, 106, 0);
+  doc.setLineWidth(0.5);
+  doc.line(14, 30, 196, 30);
+
+  doc.setFontSize(14);
+  doc.setTextColor(255, 255, 255); // White text
+  doc.text(`Opponent: ${match.opponent}`, 14, 39);
+  
+  doc.setFontSize(10);
+  doc.setTextColor(148, 163, 184);
+  doc.text(`Datum: ${formatDate(match.date)}`, 14, 46);
+  doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}`, 14, 52);
 
   // Stats Table
   const tableData = match.players.map(p => {
@@ -85,12 +113,38 @@ export function exportMatchToPDF(match: MatchHistoryEntry) {
   ]);
 
   autoTable(doc, {
-    startY: 55,
+    startY: 58,
     head: [['Speler', 'Tijd', 'PTN', 'FG', '3P', 'FT', 'AST', 'REB', 'STL', 'BLK', 'TO', 'PF']],
     body: tableData,
-    headStyles: { fillColor: [255, 106, 0] },
-    alternateRowStyles: { fillColor: [245, 245, 245] },
-    margin: { top: 55 },
+    theme: 'plain',
+    styles: {
+      fillColor: [30, 41, 59], // #1E293B (Surface)
+      textColor: [255, 255, 255],
+      fontSize: 8,
+      font: 'helvetica',
+      cellPadding: 3,
+      lineColor: [15, 23, 42], // Line matches deep background
+      lineWidth: 0.5,
+    },
+    headStyles: {
+      fillColor: [255, 106, 0], // Neon orange
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+    },
+    alternateRowStyles: {
+      fillColor: [21, 32, 51], // Darker accent
+    },
+    margin: { left: 14, right: 14 },
+    willDrawPage: function() {
+      paintPage();
+    },
+    didParseCell: function (data) {
+      if (data.row.raw[0] === 'TEAM TOTAAL') {
+        data.cell.styles.fillColor = [255, 106, 0];
+        data.cell.styles.textColor = [255, 255, 255];
+        data.cell.styles.fontStyle = 'bold';
+      }
+    }
   });
 
   doc.save(`match_${match.opponent}_${new Date(match.date).toISOString().split('T')[0]}.pdf`);
@@ -99,18 +153,43 @@ export function exportMatchToPDF(match: MatchHistoryEntry) {
 export function exportSeasonStatsToPDF(stats: any[]) {
   const doc = new jsPDF();
   
+  const paintPage = () => {
+    const pageSize = doc.internal.pageSize;
+    const w = pageSize.width ? pageSize.width : pageSize.getWidth();
+    const h = pageSize.height ? pageSize.height : pageSize.getHeight();
+    // Dark background (#0F172A)
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, w, h, 'F');
+    // Accent orange strip on left edge
+    doc.setFillColor(255, 106, 0);
+    doc.rect(0, 0, 4, h, 'F');
+  };
+
+  // Paint the first page
+  paintPage();
+  
   // Header
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(22);
   doc.setTextColor(255, 106, 0); // Primary orange
-  doc.text('BASKETBALL COACH - GAMESTATS', 14, 20);
+  doc.text('BASKETBALL COACH', 14, 20);
   
-  doc.setFontSize(16);
-  doc.setTextColor(51, 65, 85);
-  doc.text('SEIZOENSRAPPORTAGE', 14, 30);
+  doc.setFontSize(9);
+  doc.setTextColor(148, 163, 184); // Muted slate text
+  doc.text('OFFICIËLE SEIZOENSRAPPORTAGE', 14, 26);
+
+  // Separator line
+  doc.setDrawColor(255, 106, 0);
+  doc.setLineWidth(0.5);
+  doc.line(14, 30, 196, 30);
+
+  doc.setFontSize(14);
+  doc.setTextColor(255, 255, 255); // White text
+  doc.text('SEIZOENSSTATISTIEKEN (TEAM)', 14, 39);
   
   doc.setFontSize(10);
-  doc.setTextColor(100, 100, 100);
-  doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}`, 14, 38);
+  doc.setTextColor(148, 163, 184);
+  doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}`, 14, 46);
 
   const totalTeamMatches = stats.length > 0 ? Math.max(...stats.map(s => s.matches || 0)) : 0;
 
@@ -173,12 +252,38 @@ export function exportSeasonStatsToPDF(stats: any[]) {
   ]);
 
   autoTable(doc, {
-    startY: 45,
+    startY: 54,
     head: [['Speler', 'W', 'Tot. Tijd', 'PTN AVG', 'FG%', '3P%', 'FT%', 'REB AVG', 'AST AVG', 'STL AVG', 'BLK AVG', 'TO AVG', 'PF AVG']],
     body: tableData,
-    headStyles: { fillColor: [255, 106, 0] },
-    alternateRowStyles: { fillColor: [245, 245, 245] },
-    margin: { top: 45 },
+    theme: 'plain',
+    styles: {
+      fillColor: [30, 41, 59], // #1E293B (Surface)
+      textColor: [255, 255, 255],
+      fontSize: 7.5,
+      font: 'helvetica',
+      cellPadding: 2.5,
+      lineColor: [15, 23, 42],
+      lineWidth: 0.5,
+    },
+    headStyles: {
+      fillColor: [255, 106, 0], // Neon orange
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+    },
+    alternateRowStyles: {
+      fillColor: [21, 32, 51],
+    },
+    margin: { left: 14, right: 14 },
+    willDrawPage: function() {
+      paintPage();
+    },
+    didParseCell: function (data) {
+      if (data.row.raw[0] === 'TEAM TOTAAL') {
+        data.cell.styles.fillColor = [255, 106, 0];
+        data.cell.styles.textColor = [255, 255, 255];
+        data.cell.styles.fontStyle = 'bold';
+      }
+    }
   });
 
   doc.save(`seizoensstatistieken_${new Date().toISOString().split('T')[0]}.pdf`);

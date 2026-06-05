@@ -26,6 +26,13 @@ import { Player, MatchHistoryEntry, Tab, Position, Session } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
 import { exportMatchToPDF, exportSeasonStatsToPDF } from './pdfUtils';
 
+const generateId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'id-' + Math.random().toString(36).substring(2, 15) + '-' + Date.now().toString(36);
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [players, setPlayers] = useState<Player[]>([]);
@@ -61,59 +68,198 @@ export default function App() {
 
   // Load from localStorage
   useEffect(() => {
-    const savedPlayers = localStorage.getItem('players');
-    const savedHistory = localStorage.getItem('matchesHistory');
-    const savedMatchActive = localStorage.getItem('isMatchActive');
-    const savedOpponent = localStorage.getItem('opponent');
-    const savedClock = localStorage.getItem('gameClockRunning');
-    const savedMatchTime = localStorage.getItem('matchTime');
-    const savedMatchClockStart = localStorage.getItem('matchClockStartTime');
-    const savedActions = localStorage.getItem('globalActionsLog');
-    const savedStarting5 = localStorage.getItem('currentStarting5');
-
-    if (savedPlayers) {
-      let parsedPlayers: Player[] = JSON.parse(savedPlayers);
-
-      // Auto-migrate positions
-      const positionMap: Record<string, string> = {
-        'PG': 'Guard', 'SG': 'Guard',
-        'SF': 'Forward', 'PF': 'Forward',
-        'C': 'Big'
-      };
-
-      // Restore states if app was closed while timers were running
-      parsedPlayers = parsedPlayers.map(p => {
-        // Migration
-        if (positionMap[p.position]) {
-          p.position = positionMap[p.position];
-        }
-
-        // Ensure lastActions exists
-        if (!p.lastActions) {
-          p.lastActions = [];
-        }
-
-        if (p.isRunning && p.lastStartTime) {
-          const now = Date.now();
-          const extraTime = now - p.lastStartTime;
-          return {
-            ...p,
-            totalTime: p.totalTime + extraTime,
-            lastStartTime: now
+    try {
+      const savedPlayers = localStorage.getItem('players');
+      if (savedPlayers) {
+        let parsedPlayers = JSON.parse(savedPlayers);
+        if (Array.isArray(parsedPlayers)) {
+          // Auto-migrate positions
+          const positionMap: Record<string, string> = {
+            'PG': 'Guard', 'SG': 'Guard',
+            'SF': 'Forward', 'PF': 'Forward',
+            'C': 'Big'
           };
+
+          // Restore states if app was closed while timers were running & sanitize fields
+          parsedPlayers = parsedPlayers.map((p: any) => {
+            if (!p || typeof p !== 'object') return null;
+            
+            const id = p.id || generateId();
+            const name = p.name || 'Speler';
+            const number = p.number !== undefined ? String(p.number) : '0';
+            const position = p.position || 'Guard';
+            const totalTime = typeof p.totalTime === 'number' ? p.totalTime : 0;
+            const isRunning = p.isRunning === true;
+            const lastStartTime = typeof p.lastStartTime === 'number' ? p.lastStartTime : null;
+            const sessions = Array.isArray(p.sessions) ? p.sessions : [];
+            
+            // Stats fallback
+            const defaultStats = {
+              points: 0, assists: 0, rebounds: 0, steals: 0, blocks: 0, turnovers: 0,
+              fgm: 0, fga: 0, threeFgm: 0, threeFga: 0, ftm: 0, fta: 0
+            };
+            const stats = p.stats && typeof p.stats === 'object' ? { ...defaultStats, ...p.stats } : defaultStats;
+            const lastActions = Array.isArray(p.lastActions) ? p.lastActions : [];
+
+            // Migration
+            let migratedPosition = position;
+            if (positionMap[position]) {
+              migratedPosition = positionMap[position];
+            }
+
+            if (isRunning && lastStartTime) {
+              const now = Date.now();
+              const extraTime = now - lastStartTime;
+              return {
+                id,
+                name,
+                number,
+                position: migratedPosition,
+                totalTime: totalTime + extraTime,
+                isRunning,
+                lastStartTime: now,
+                sessions,
+                stats,
+                lastActions
+              };
+            }
+            return {
+              id,
+              name,
+              number,
+              position: migratedPosition,
+              totalTime,
+              isRunning,
+              lastStartTime,
+              sessions,
+              stats,
+              lastActions
+            };
+          }).filter(Boolean);
+          setPlayers(parsedPlayers);
         }
-        return p;
-      });
-      setPlayers(parsedPlayers);
+      }
+    } catch (e) {
+      console.error('Failed to parse players from localStorage:', e);
     }
-    if (savedHistory) setHistory(JSON.parse(savedHistory));
-    if (savedMatchActive) setIsMatchActive(JSON.parse(savedMatchActive));
-    if (savedOpponent) setOpponent(savedOpponent);
-    if (savedClock) setGameClockRunning(JSON.parse(savedClock));
-    if (savedMatchTime) setMatchTime(JSON.parse(savedMatchTime));
-    if (savedMatchClockStart) setMatchClockStartTime(JSON.parse(savedMatchClockStart));
-    if (savedActions) setGlobalActionsLog(JSON.parse(savedActions));
-    if (savedStarting5) setCurrentStarting5(JSON.parse(savedStarting5));
+
+    try {
+      const savedHistory = localStorage.getItem('matchesHistory');
+      if (savedHistory) {
+        const parsedHistory = JSON.parse(savedHistory);
+        if (Array.isArray(parsedHistory)) {
+          const sanitizedHistory = parsedHistory.map((match: any) => {
+            if (!match || typeof match !== 'object') return null;
+            const players = Array.isArray(match.players) ? match.players.map((p: any) => {
+              if (!p || typeof p !== 'object') return null;
+              const defaultStats = {
+                points: 0, assists: 0, rebounds: 0, steals: 0, blocks: 0, turnovers: 0,
+                fgm: 0, fga: 0, threeFgm: 0, threeFga: 0, ftm: 0, fta: 0
+              };
+              return {
+                id: p.id || generateId(),
+                name: p.name || 'Speler',
+                number: p.number !== undefined ? String(p.number) : '0',
+                position: p.position || 'Guard',
+                totalTime: typeof p.totalTime === 'number' ? p.totalTime : 0,
+                isRunning: false,
+                lastStartTime: null,
+                sessions: Array.isArray(p.sessions) ? p.sessions : [],
+                stats: p.stats && typeof p.stats === 'object' ? { ...defaultStats, ...p.stats } : defaultStats,
+                lastActions: []
+              };
+            }).filter(Boolean) : [];
+
+            return {
+              matchId: match.matchId || generateId(),
+              date: typeof match.date === 'number' ? match.date : Date.now(),
+              opponent: match.opponent || 'Onbekende Tegenstander',
+              players,
+              totalMatchTime: typeof match.totalMatchTime === 'number' ? match.totalMatchTime : 0,
+              starting5: Array.isArray(match.starting5) ? match.starting5 : []
+            };
+          }).filter(Boolean);
+          setHistory(sanitizedHistory);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to parse match history from localStorage:', e);
+    }
+
+    try {
+      const savedMatchActive = localStorage.getItem('isMatchActive');
+      if (savedMatchActive) {
+        setIsMatchActive(JSON.parse(savedMatchActive) === true);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    try {
+      const savedOpponent = localStorage.getItem('opponent');
+      if (savedOpponent && savedOpponent !== 'null' && savedOpponent !== 'undefined') {
+        setOpponent(savedOpponent);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    try {
+      const savedClock = localStorage.getItem('gameClockRunning');
+      if (savedClock) {
+        setGameClockRunning(JSON.parse(savedClock) === true);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    try {
+      const savedMatchTime = localStorage.getItem('matchTime');
+      if (savedMatchTime) {
+        const val = JSON.parse(savedMatchTime);
+        if (typeof val === 'number') {
+          setMatchTime(val);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    try {
+      const savedMatchClockStart = localStorage.getItem('matchClockStartTime');
+      if (savedMatchClockStart) {
+        const val = JSON.parse(savedMatchClockStart);
+        if (typeof val === 'number' || val === null) {
+          setMatchClockStartTime(val);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    try {
+      const savedActions = localStorage.getItem('globalActionsLog');
+      if (savedActions) {
+        const parsedActions = JSON.parse(savedActions);
+        if (Array.isArray(parsedActions)) {
+          setGlobalActionsLog(parsedActions);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    try {
+      const savedStarting5 = localStorage.getItem('currentStarting5');
+      if (savedStarting5) {
+        const parsedStarting = JSON.parse(savedStarting5);
+        if (Array.isArray(parsedStarting)) {
+          setCurrentStarting5(parsedStarting);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
 
     initialLoadDone.current = true;
   }, []);
@@ -140,7 +286,7 @@ export default function App() {
 
   const addPlayer = (name: string, number: string, position: string) => {
     const newPlayer: Player = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       name,
       number,
       position,
@@ -285,7 +431,7 @@ export default function App() {
 
     // Add to global action log
     const newAction = {
-      actionId: crypto.randomUUID(),
+      actionId: generateId(),
       playerId: player.id,
       playerName: player.name,
       playerNumber: player.number,
@@ -425,7 +571,7 @@ export default function App() {
     }
 
     const newEntry: MatchHistoryEntry = {
-      matchId: crypto.randomUUID(),
+      matchId: generateId(),
       date: now,
       opponent,
       players: finalPlayers,
@@ -488,9 +634,10 @@ export default function App() {
   };
 
   const getNameFontSize = (name: string) => {
-    if (name.length > 20) return 'text-[11px] sm:text-xs leading-tight font-bold';
-    if (name.length > 15) return 'text-xs sm:text-sm leading-tight font-bold';
-    if (name.length > 10) return 'text-sm sm:text-base leading-tight font-bold';
+    const len = name ? String(name).length : 0;
+    if (len > 20) return 'text-[11px] sm:text-xs leading-tight font-bold';
+    if (len > 15) return 'text-xs sm:text-sm leading-tight font-bold';
+    if (len > 10) return 'text-sm sm:text-base leading-tight font-bold';
     return 'text-base sm:text-lg leading-tight font-bold';
   };
 
@@ -742,13 +889,13 @@ export default function App() {
               </div>
               <div className="min-w-0 flex-1">
                 <h3 className={`font-bold transition-all break-words leading-tight ${
-                  player.name.length > 20 
+                  (player.name || '').length > 20 
                     ? 'text-xs sm:text-sm' 
-                    : player.name.length > 12 
+                    : (player.name || '').length > 12 
                       ? 'text-sm sm:text-base' 
                       : 'text-base sm:text-lg'
-                }`} title={player.name}>
-                  {player.name}
+                }`} title={player.name || ''}>
+                  {player.name || 'Speler'}
                 </h3>
                 <p className="text-[10px] text-text-muted uppercase font-bold">{player.position}</p>
               </div>

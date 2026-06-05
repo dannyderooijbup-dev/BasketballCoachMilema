@@ -23,6 +23,7 @@ export interface Stats {
   threeFga: number;
   ftm: number;
   fta: number;
+  pf: number;
 }
 
 export interface PlayerAction {

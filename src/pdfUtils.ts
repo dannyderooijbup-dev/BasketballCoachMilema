@@ -39,13 +39,54 @@ export function exportMatchToPDF(match: MatchHistoryEntry) {
       p.stats.rebounds,
       p.stats.steals,
       p.stats.blocks,
-      p.stats.turnovers
+      p.stats.turnovers,
+      p.stats.pf || 0
     ];
   });
 
+  // Calculate team total for this match
+  let tTime = 0, tPtn = 0, tAst = 0, tReb = 0, tStl = 0, tBlk = 0, tTo = 0, tPf = 0;
+  let tFgm = 0, tFga = 0, t3Fgm = 0, t3Fga = 0, tFtm = 0, tFta = 0;
+
+  match.players.forEach(p => {
+    tTime += p.totalTime || 0;
+    tPtn += p.stats.points || 0;
+    tAst += p.stats.assists || 0;
+    tReb += p.stats.rebounds || 0;
+    tStl += p.stats.steals || 0;
+    tBlk += p.stats.blocks || 0;
+    tTo += p.stats.turnovers || 0;
+    tPf += p.stats.pf || 0;
+    tFgm += p.stats.fgm || 0;
+    tFga += p.stats.fga || 0;
+    t3Fgm += p.stats.threeFgm || 0;
+    t3Fga += p.stats.threeFga || 0;
+    tFtm += p.stats.ftm || 0;
+    tFta += p.stats.fta || 0;
+  });
+
+  const fgTotal = `${tFgm}/${tFga} (${calculatePercentage(tFgm, tFga)})`;
+  const tpTotal = `${t3Fgm}/${t3Fga} (${calculatePercentage(t3Fgm, t3Fga)})`;
+  const ftTotal = `${tFtm}/${tFta} (${calculatePercentage(tFtm, tFta)})`;
+
+  tableData.push([
+    'TEAM TOTAAL',
+    formatTime(tTime),
+    tPtn,
+    fgTotal,
+    tpTotal,
+    ftTotal,
+    tAst,
+    tReb,
+    tStl,
+    tBlk,
+    tTo,
+    tPf
+  ]);
+
   autoTable(doc, {
     startY: 55,
-    head: [['Speler', 'Tijd', 'PTN', 'FG', '3P', 'FT', 'AST', 'REB', 'STL', 'BLK', 'TO']],
+    head: [['Speler', 'Tijd', 'PTN', 'FG', '3P', 'FT', 'AST', 'REB', 'STL', 'BLK', 'TO', 'PF']],
     body: tableData,
     headStyles: { fillColor: [255, 106, 0] },
     alternateRowStyles: { fillColor: [245, 245, 245] },
@@ -71,6 +112,8 @@ export function exportSeasonStatsToPDF(stats: any[]) {
   doc.setTextColor(100, 100, 100);
   doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}`, 14, 38);
 
+  const totalTeamMatches = stats.length > 0 ? Math.max(...stats.map(s => s.matches || 0)) : 0;
+
   const tableData = stats.map(s => [
     `#${s.number} ${s.name}`,
     s.matches,
@@ -80,12 +123,58 @@ export function exportSeasonStatsToPDF(stats: any[]) {
     calculatePercentage(s.threeFgm, s.threeFga),
     calculatePercentage(s.ftm, s.fta),
     (s.rebounds / s.matches).toFixed(1),
-    (s.assists / s.matches).toFixed(1)
+    (s.assists / s.matches).toFixed(1),
+    (s.steals / s.matches).toFixed(1),
+    (s.blocks / s.matches).toFixed(1),
+    (s.turnovers / s.matches).toFixed(1),
+    (s.pf / s.matches).toFixed(1),
+  ]);
+
+  // Calculate season totals
+  let totalTime = 0;
+  let totalPtn = 0;
+  let totalFgm = 0, totalFga = 0;
+  let total3Fgm = 0, total3Fga = 0;
+  let totalFtm = 0, totalFta = 0;
+  let totalReb = 0, totalAst = 0;
+  let totalStl = 0, totalBlk = 0, totalTo = 0, totalPf = 0;
+
+  stats.forEach(s => {
+    totalTime += s.totalTime || 0;
+    totalPtn += s.points || 0;
+    totalFgm += s.fgm || 0;
+    totalFga += s.fga || 0;
+    total3Fgm += s.threeFgm || 0;
+    total3Fga += s.threeFga || 0;
+    totalFtm += s.ftm || 0;
+    totalFta += s.fta || 0;
+    totalReb += s.rebounds || 0;
+    totalAst += s.assists || 0;
+    totalStl += s.steals || 0;
+    totalBlk += s.blocks || 0;
+    totalTo += s.turnovers || 0;
+    totalPf += s.pf || 0;
+  });
+
+  tableData.push([
+    'TEAM TOTAAL',
+    totalTeamMatches,
+    formatTime(totalTime),
+    `${totalPtn} (avg ${totalTeamMatches > 0 ? Math.round(totalPtn / totalTeamMatches) : 0})`,
+    calculatePercentage(totalFgm, totalFga),
+    calculatePercentage(total3Fgm, total3Fga),
+    calculatePercentage(totalFtm, totalFta),
+    totalTeamMatches > 0 ? (totalReb / totalTeamMatches).toFixed(1) : '0.0',
+    totalTeamMatches > 0 ? (totalAst / totalTeamMatches).toFixed(1) : '0.0',
+    totalTeamMatches > 0 ? (totalStl / totalTeamMatches).toFixed(1) : '0.0',
+    totalTeamMatches > 0 ? (totalBlk / totalTeamMatches).toFixed(1) : '0.0',
+    totalTeamMatches > 0 ? (totalTo / totalTeamMatches).toFixed(1) : '0.0',
+    totalTeamMatches > 0 ? (totalPf / totalTeamMatches).toFixed(1) : '0.0',
   ]);
 
   autoTable(doc, {
     startY: 45,
-    head: [['Speler', 'W', 'Totaal Tijd', 'PTN AVG', 'FG%', '3P%', 'FT%', 'REB AVG', 'AST AVG']],
+    head: [['Speler', 'W', 'Tot. Tijd', 'PTN AVG', 'FG%', '3P%', 'FT%', 'REB AVG', 'AST AVG', 'STL AVG', 'BLK AVG', 'TO AVG', 'PF AVG']],
     body: tableData,
     headStyles: { fillColor: [255, 106, 0] },
     alternateRowStyles: { fillColor: [245, 245, 245] },

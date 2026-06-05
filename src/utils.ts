@@ -17,7 +17,8 @@ export const INITIAL_STATS: Stats = {
   threeFgm: 0,
   threeFga: 0,
   ftm: 0,
-  fta: 0
+  fta: 0,
+  pf: 0
 };
 
 export function calculatePercentage(made: number, attempted: number): string {

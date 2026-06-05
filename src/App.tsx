@@ -47,6 +47,9 @@ export default function App() {
   const [gameClockRunning, setGameClockRunning] = useState(false);
   const [matchTime, setMatchTime] = useState(0); // Accumulated time in ms
   const [matchClockStartTime, setMatchClockStartTime] = useState<number | null>(null);
+  const [isEditingClock, setIsEditingClock] = useState(false);
+  const [editMin, setEditMin] = useState(0);
+  const [editSec, setEditSec] = useState(0);
 
   // Global action log for undo and visible recent actions list
   const [globalActionsLog, setGlobalActionsLog] = useState<any[]>([]);
@@ -61,6 +64,56 @@ export default function App() {
       liveMatchTime += (Date.now() - matchClockStartTime);
     }
     return liveMatchTime;
+  };
+
+  const startClockEditing = () => {
+    const totalMs = getLiveMatchTime();
+    const totalSec = Math.floor(totalMs / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    setEditMin(m);
+    setEditSec(s);
+    setIsEditingClock(true);
+  };
+
+  const saveClockCorrection = () => {
+    const oldMs = getLiveMatchTime();
+    const newMs = (editMin * 60 + editSec) * 1000;
+    const delta = newMs - oldMs;
+    const now = Date.now();
+
+    // 1. Update Match Clock state
+    setMatchTime(newMs);
+    if (gameClockRunning) {
+      setMatchClockStartTime(now);
+    } else {
+      setMatchClockStartTime(null);
+    }
+
+    // 2. Update players timing (specifically active ones)
+    setPlayers(prev => prev.map(p => {
+      if (!p.isRunning) return p;
+
+      if (gameClockRunning) {
+        // Calculate player's live time before correction
+        const playerLiveTime = p.lastStartTime ? p.totalTime + (now - p.lastStartTime) : p.totalTime;
+        const newPlayerTime = Math.max(0, playerLiveTime + delta);
+        return {
+          ...p,
+          totalTime: newPlayerTime,
+          lastStartTime: now
+        };
+      } else {
+        const newPlayerTime = Math.max(0, p.totalTime + delta);
+        return {
+          ...p,
+          totalTime: newPlayerTime,
+          lastStartTime: null
+        };
+      }
+    }));
+
+    setIsEditingClock(false);
   };
 
   // Ref to persist state to localStorage only when it changes
@@ -96,7 +149,7 @@ export default function App() {
             // Stats fallback
             const defaultStats = {
               points: 0, assists: 0, rebounds: 0, steals: 0, blocks: 0, turnovers: 0,
-              fgm: 0, fga: 0, threeFgm: 0, threeFga: 0, ftm: 0, fta: 0
+              fgm: 0, fga: 0, threeFgm: 0, threeFga: 0, ftm: 0, fta: 0, pf: 0
             };
             const stats = p.stats && typeof p.stats === 'object' ? { ...defaultStats, ...p.stats } : defaultStats;
             const lastActions = Array.isArray(p.lastActions) ? p.lastActions : [];
@@ -154,7 +207,7 @@ export default function App() {
               if (!p || typeof p !== 'object') return null;
               const defaultStats = {
                 points: 0, assists: 0, rebounds: 0, steals: 0, blocks: 0, turnovers: 0,
-                fgm: 0, fga: 0, threeFgm: 0, threeFga: 0, ftm: 0, fta: 0
+                fgm: 0, fga: 0, threeFgm: 0, threeFga: 0, ftm: 0, fta: 0, pf: 0
               };
               return {
                 id: p.id || generateId(),
@@ -376,43 +429,56 @@ export default function App() {
   };
 
   const updateStat = (id: string, stat: keyof Player['stats'], delta: number) => {
-    if (delta < 0) return; // Prevent manual decrement, use undo instead
-
     const player = players.find(p => p.id === id);
     if (!player) return;
 
     let statChanges: Partial<Record<keyof Player['stats'], number>> = {};
     let label = '';
 
-    if (stat === 'threeFgm') {
-      statChanges = { threeFgm: 1, threeFga: 1, fgm: 1, fga: 1, points: 3 };
-      label = '+3 PTN';
-    } else if (stat === 'threeFga') {
-      statChanges = { threeFga: 1, fga: 1 };
-      label = '3P Miss';
-    } else if (stat === 'fgm') {
-      statChanges = { fgm: 1, fga: 1, points: 2 };
-      label = '+2 PTN';
-    } else if (stat === 'ftm') {
-      statChanges = { ftm: 1, fta: 1, points: 1 };
-      label = '+1 VW';
-    } else if (stat === 'fga') {
-      statChanges = { fga: 1 };
-      label = 'FG Miss';
-    } else if (stat === 'fta') {
-      statChanges = { fta: 1 };
-      label = 'VW Miss';
-    } else {
-      statChanges = { [stat]: 1 };
+    if (delta < 0) {
+      statChanges = { [stat]: -1 };
       const DutchLabels: Record<string, string> = {
-        points: '+1 PTN',
-        assists: '+1 Assist',
-        rebounds: '+1 Rebound',
-        steals: '+1 Steal',
-        blocks: '+1 Block',
-        turnovers: '+1 Turnover'
+        points: '-1 PTN',
+        assists: '-1 Assist',
+        rebounds: '-1 Rebound',
+        steals: '-1 Steal',
+        blocks: '-1 Block',
+        turnovers: '-1 Turnover',
+        pf: '-1 Fout'
       };
-      label = DutchLabels[stat] || `+1 ${stat.toUpperCase()}`;
+      label = DutchLabels[stat] || `-1 ${stat.toUpperCase()}`;
+    } else {
+      if (stat === 'threeFgm') {
+        statChanges = { threeFgm: 1, threeFga: 1, fgm: 1, fga: 1, points: 3 };
+        label = '+3 PTN';
+      } else if (stat === 'threeFga') {
+        statChanges = { threeFga: 1, fga: 1 };
+        label = '3P Miss';
+      } else if (stat === 'fgm') {
+        statChanges = { fgm: 1, fga: 1, points: 2 };
+        label = '+2 PTN';
+      } else if (stat === 'ftm') {
+        statChanges = { ftm: 1, fta: 1, points: 1 };
+        label = '+1 VW';
+      } else if (stat === 'fga') {
+        statChanges = { fga: 1 };
+        label = 'FG Miss';
+      } else if (stat === 'fta') {
+        statChanges = { fta: 1 };
+        label = 'VW Miss';
+      } else {
+        statChanges = { [stat]: 1 };
+        const DutchLabels: Record<string, string> = {
+          points: '+1 PTN',
+          assists: '+1 Assist',
+          rebounds: '+1 Rebound',
+          steals: '+1 Steal',
+          blocks: '+1 Block',
+          turnovers: '+1 Turnover',
+          pf: '+1 Fout'
+        };
+        label = DutchLabels[stat] || `+1 ${stat.toUpperCase()}`;
+      }
     }
 
     // Update player stats
@@ -421,7 +487,7 @@ export default function App() {
       const newStats = { ...p.stats };
       Object.entries(statChanges).forEach(([key, val]) => {
         const statKey = key as keyof Player['stats'];
-        newStats[statKey] = (newStats[statKey] || 0) + (val || 0);
+        newStats[statKey] = Math.max(0, (newStats[statKey] || 0) + (val || 0));
       });
       return {
         ...p,
@@ -496,6 +562,7 @@ export default function App() {
             fgm: 0, fga: 0,
             threeFgm: 0, threeFga: 0,
             ftm: 0, fta: 0,
+            pf: 0,
             matches: 0
           };
         }
@@ -513,6 +580,7 @@ export default function App() {
         s.threeFga += p.stats.threeFga;
         s.ftm += p.stats.ftm;
         s.fta += p.stats.fta;
+        s.pf += p.stats.pf || 0;
         s.matches += 1;
       });
     });
@@ -685,7 +753,59 @@ export default function App() {
            <div className={!isMatchActive ? 'opacity-30' : ''}>
              <h2 className="text-xl sm:text-2xl font-black font-display italic uppercase tracking-tighter text-white">Wedstrijdklok</h2>
              <div className="text-3xl sm:text-5xl font-mono font-black text-primary tracking-wider mt-1 sm:mt-2">
-               {isMatchActive ? formatTime(getLiveMatchTime()) : '00:00'}
+               {isEditingClock ? (
+                <div className="flex items-center gap-2 mt-1 sm:mt-2 text-base font-sans font-medium tracking-normal">
+                  <input 
+                    type="number" 
+                    min="0"
+                    max="99"
+                    value={editMin} 
+                    onChange={e => setEditMin(Math.max(0, parseInt(e.target.value) || 0))} 
+                    className="w-16 bg-dark/60 text-white font-mono text-xl sm:text-2xl p-1.5 text-center rounded border border-white/20 focus:outline-none focus:border-primary font-black"
+                    placeholder="Min"
+                    id="clock-min-input"
+                  />
+                  <span className="text-white text-xl font-bold">:</span>
+                  <input 
+                    type="number" 
+                    min="0"
+                    max="59"
+                    value={editSec} 
+                    onChange={e => setEditSec(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
+                    className="w-16 bg-dark/60 text-white font-mono text-xl sm:text-2xl p-1.5 text-center rounded border border-white/20 focus:outline-none focus:border-primary font-black"
+                    placeholder="Sec"
+                    id="clock-sec-input"
+                  />
+                  <button 
+                    onClick={saveClockCorrection}
+                    className="bg-primary hover:bg-primary/80 text-white text-xs font-black uppercase italic font-display px-3 py-2.5 rounded-lg transition-colors shadow active:scale-95"
+                    id="save-clock-btn"
+                  >
+                    Opslaan
+                  </button>
+                  <button 
+                    onClick={() => setIsEditingClock(false)}
+                    className="bg-white/10 hover:bg-white/20 text-text-muted text-xs font-black uppercase italic font-display px-2.5 py-2.5 rounded-lg transition-colors active:scale-95"
+                    id="cancel-clock-btn"
+                  >
+                    Annuleer
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span>{isMatchActive ? formatTime(getLiveMatchTime()) : '00:00'}</span>
+                  {isMatchActive && (
+                    <button 
+                      onClick={startClockEditing}
+                      className="text-text-muted hover:text-primary transition-colors p-1.5 rounded hover:bg-white/5 active:scale-90"
+                      title="Corrigeer wedstrijdklok"
+                      id="edit-clock-btn"
+                    >
+                      <Pencil size={18} />
+                    </button>
+                  )}
+                </div>
+              )}
              </div>
              <p className="text-text-muted text-[10px] sm:text-xs uppercase tracking-widest font-medium mt-1">{gameClockRunning ? 'Klok Loopt' : (isMatchActive ? 'Klok Gestopt' : 'Wacht op match...')}</p>
            </div>
@@ -787,6 +907,7 @@ export default function App() {
                    <StatControl label="STL" value={player.stats.steals} onAdd={() => updateStat(player.id, 'steals', 1)} onSub={() => updateStat(player.id, 'steals', -1)} />
                    <StatControl label="BLK" value={player.stats.blocks} onAdd={() => updateStat(player.id, 'blocks', 1)} onSub={() => updateStat(player.id, 'blocks', -1)} />
                    <StatControl label="TO" value={player.stats.turnovers} onAdd={() => updateStat(player.id, 'turnovers', 1)} onSub={() => updateStat(player.id, 'turnovers', -1)} />
+                    <StatControl label="PF" value={player.stats.pf || 0} onAdd={() => updateStat(player.id, 'pf', 1)} onSub={() => updateStat(player.id, 'pf', -1)} />
                    <button onClick={() => undoLastGlobalAction()} className="bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-text-muted text-[10px] font-bold transition-all border border-white/5 active:scale-95 py-3 sm:py-0">
                      <RotateCcw size={12} className="mr-2" /> UNDO
                    </button>
@@ -819,6 +940,97 @@ export default function App() {
   const renderHistory = () => (
     <div className="space-y-6">
       <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">Wedstrijdhistorie</h2>
+
+      {history.length > 0 && (() => {
+        const hTotals = {
+          matches: history.length,
+          totalTime: 0,
+          totalPlayerTime: 0,
+          points: 0,
+          fgm: 0, fga: 0,
+          threeFgm: 0, threeFga: 0,
+          ftm: 0, fta: 0,
+          assists: 0,
+          rebounds: 0,
+          steals: 0,
+          blocks: 0,
+          turnovers: 0,
+          pf: 0
+        };
+
+        history.forEach(match => {
+          hTotals.totalTime += match.totalMatchTime || 0;
+          match.players.forEach(p => {
+            hTotals.totalPlayerTime += p.totalTime || 0;
+            hTotals.points += p.stats.points || 0;
+            hTotals.fgm += p.stats.fgm || 0;
+            hTotals.fga += p.stats.fga || 0;
+            hTotals.threeFgm += p.stats.threeFgm || 0;
+            hTotals.threeFga += p.stats.threeFga || 0;
+            hTotals.ftm += p.stats.ftm || 0;
+            hTotals.fta += p.stats.fta || 0;
+            hTotals.assists += p.stats.assists || 0;
+            hTotals.rebounds += p.stats.rebounds || 0;
+            hTotals.steals += p.stats.steals || 0;
+            hTotals.blocks += p.stats.blocks || 0;
+            hTotals.turnovers += p.stats.turnovers || 0;
+            hTotals.pf += p.stats.pf || 0;
+          });
+        });
+
+        return (
+          <div className="bg-gradient-to-br from-primary/15 to-primary/5 p-4 sm:p-5 rounded-3xl border border-primary/20 space-y-4 shadow-xl">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b border-white/5 pb-3">
+              <div>
+                <h3 className="font-display font-black uppercase italic tracking-tight text-md sm:text-lg text-primary">Seizoenstotalen (Team)</h3>
+                <p className="text-[10px] text-text-muted uppercase font-bold tracking-widest">{hTotals.matches} Gespeelde Wedstrijden</p>
+              </div>
+              <div className="text-left sm:text-right">
+                <span className="text-[10px] text-text-muted uppercase font-bold tracking-[0.1em] block">Totale Team Speeltijd</span>
+                <span className="font-mono text-lg sm:text-xl font-black text-white">{formatTime(hTotals.totalPlayerTime)}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
+              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">PTN</p>
+                <p className="text-md sm:text-lg font-black text-primary">{hTotals.points}</p>
+                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.points / hTotals.matches).toFixed(1)} avg</p>
+              </div>
+              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">FG%</p>
+                <p className="text-md sm:text-lg font-black text-white">{calculatePercentage(hTotals.fgm, hTotals.fga)}</p>
+                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{hTotals.fgm}/{hTotals.fga}</p>
+              </div>
+              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">AST</p>
+                <p className="text-md sm:text-lg font-black text-white">{hTotals.assists}</p>
+                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.assists / hTotals.matches).toFixed(1)} avg</p>
+              </div>
+              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">REB</p>
+                <p className="text-md sm:text-lg font-black text-white">{hTotals.rebounds}</p>
+                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.rebounds / hTotals.matches).toFixed(1)} avg</p>
+              </div>
+              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">STL</p>
+                <p className="text-md sm:text-lg font-black text-white">{hTotals.steals}</p>
+                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.steals / hTotals.matches).toFixed(1)} avg</p>
+              </div>
+              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">TO</p>
+                <p className="text-md sm:text-lg font-black text-white">{hTotals.turnovers}</p>
+                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.turnovers / hTotals.matches).toFixed(1)} avg</p>
+              </div>
+              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">PF</p>
+                <p className="text-md sm:text-lg font-black text-red-400">{hTotals.pf}</p>
+                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.pf / hTotals.matches).toFixed(1)} avg</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="space-y-3">
         {history.map(match => (
           <div 
@@ -948,11 +1160,11 @@ export default function App() {
           )}
         </div>
         <div className="overflow-hidden bg-surface rounded-2xl sm:rounded-3xl border border-white/10 shadow-2xl">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[600px]">
+          <div className="overflow-x-auto scrollbar-thin">
+            <table className="w-full text-left border-collapse min-w-[900px]">
               <thead>
                 <tr className="bg-white/5 text-[9px] sm:text-[10px] uppercase tracking-widest text-text-muted border-b border-white/5 font-bold italic">
-                  <th className="px-3 sm:px-4 py-3 sm:py-4">Speler</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4 sticky left-0 bg-surface sm:relative sm:bg-transparent z-10">Speler</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">W</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">Tijd</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">PTN</th>
@@ -961,12 +1173,16 @@ export default function App() {
                   <th className="px-3 sm:px-4 py-3 sm:py-4">FT%</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">REB</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">AST</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">STL</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">BLK</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">TO</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">PF</th>
                 </tr>
               </thead>
               <tbody>
                 {stats.map((s: any) => (
                   <tr key={s.name} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 sticky left-0 bg-surface sm:relative sm:bg-transparent">
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 sticky left-0 bg-surface sm:relative sm:bg-transparent z-10">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-primary">#{s.number}</span>
                         <span className="font-medium text-xs sm:text-sm whitespace-nowrap">{s.name}</span>
@@ -980,17 +1196,65 @@ export default function App() {
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.ftm, s.fta)}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{(s.rebounds / s.matches).toFixed(1)}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{(s.assists / s.matches).toFixed(1)}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{(s.steals / s.matches).toFixed(1)}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{(s.blocks / s.matches).toFixed(1)}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{(s.turnovers / s.matches).toFixed(1)}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right font-semibold text-red-400">{(s.pf / s.matches).toFixed(1)}</td>
                   </tr>
                 ))}
-              {stats.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="py-20 text-center text-text-muted">Geen data beschikbaar</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+
+                {stats.length > 0 && (() => {
+                  let totalW = stats.length > 0 ? Math.max(...stats.map((s: any) => s.matches || 0)) : 0;
+                  let totalTime = stats.reduce((sum, s) => sum + (s.totalTime || 0), 0);
+                  let totalPoints = stats.reduce((sum, s) => sum + (s.points || 0), 0);
+                  let totalFgm = stats.reduce((sum, s) => sum + (s.fgm || 0), 0);
+                  let totalFga = stats.reduce((sum, s) => sum + (s.fga || 0), 0);
+                  let total3Fgm = stats.reduce((sum, s) => sum + (s.threeFgm || 0), 0);
+                  let total3Fga = stats.reduce((sum, s) => sum + (s.threeFga || 0), 0);
+                  let totalFtm = stats.reduce((sum, s) => sum + (s.ftm || 0), 0);
+                  let totalFta = stats.reduce((sum, s) => sum + (s.fta || 0), 0);
+                  let totalRebounds = stats.reduce((sum, s) => sum + (s.rebounds || 0), 0);
+                  let totalAssists = stats.reduce((sum, s) => sum + (s.assists || 0), 0);
+                  let totalSteals = stats.reduce((sum, s) => sum + (s.steals || 0), 0);
+                  let totalBlocks = stats.reduce((sum, s) => sum + (s.blocks || 0), 0);
+                  let totalTurnovers = stats.reduce((sum, s) => sum + (s.turnovers || 0), 0);
+                  let totalPf = stats.reduce((sum, s) => sum + (s.pf || 0), 0);
+
+                  return (
+                    <tr className="bg-primary/15 border-t border-primary/30 font-bold text-white relative z-10">
+                      <td className="px-3 sm:px-4 py-4 sticky left-0 bg-[#231710] sm:relative sm:bg-transparent z-10">
+                        <div className="flex items-center gap-2">
+                          <span className="font-display font-black text-primary">TEAM</span>
+                          <span className="font-display font-black uppercase text-xs sm:text-sm whitespace-nowrap text-primary">TOTAAL</span>
+                        </div>
+                      </td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-primary">{totalW}</td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-primary">{formatTime(totalTime)}</td>
+                      <td className="px-3 sm:px-4 py-4 text-xs sm:text-sm">
+                        <span className="font-bold text-primary">{totalPoints}</span> <span className="text-[9px] text-text-muted font-normal italic">({totalW > 0 ? (totalPoints / totalW).toFixed(1) : '0.0'} avg)</span>
+                      </td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(totalFgm, totalFga)}</td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(total3Fgm, total3Fga)}</td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(totalFtm, totalFta)}</td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalRebounds / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalAssists / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalSteals / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalBlocks / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalTurnovers / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-red-300 font-bold">{totalW > 0 ? (totalPf / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-red-300/80 font-normal italic">avg</span></td>
+                    </tr>
+                  );
+                })()}
+
+                {stats.length === 0 && (
+                  <tr>
+                    <td colSpan={13} className="py-20 text-center text-text-muted">Geen data beschikbaar</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
     </div>
   );
 };
@@ -1254,6 +1518,71 @@ export default function App() {
                   </div>
                 )}
 
+                {(() => {
+                  let tTime = 0, tPtn = 0, tAst = 0, tReb = 0, tStl = 0, tBlk = 0, tTo = 0, tPf = 0;
+                  let tFgm = 0, tFga = 0, t3Fgm = 0, t3Fga = 0, tFtm = 0, tFta = 0;
+
+                  selectedMatch.players.forEach(p => {
+                    tTime += p.totalTime || 0;
+                    tPtn += p.stats.points || 0;
+                    tAst += p.stats.assists || 0;
+                    tReb += p.stats.rebounds || 0;
+                    tStl += p.stats.steals || 0;
+                    tBlk += p.stats.blocks || 0;
+                    tTo += p.stats.turnovers || 0;
+                    tPf += p.stats.pf || 0;
+                    tFgm += p.stats.fgm || 0;
+                    tFga += p.stats.fga || 0;
+                    t3Fgm += p.stats.threeFgm || 0;
+                    t3Fga += p.stats.threeFga || 0;
+                    tFtm += p.stats.ftm || 0;
+                    tFta += p.stats.fta || 0;
+                  });
+
+                  return (
+                    <div className="bg-gradient-to-br from-primary/10 to-primary/2 p-5 sm:p-6 rounded-2xl border border-primary/20 space-y-4">
+                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b border-white/5 pb-3">
+                        <div>
+                          <h4 className="font-display font-black uppercase italic tracking-tight text-md text-primary">TEAM TOTAAL (WEDSTRIJD)</h4>
+                          <p className="text-[10px] text-text-muted uppercase font-bold tracking-widest">{selectedMatch.players.length} Spelers ingezet</p>
+                        </div>
+                        <div className="text-left sm:text-right">
+                          <span className="text-[10px] text-text-muted uppercase font-bold tracking-[0.1em] block">Totale Team Speeltijd</span>
+                          <span className="font-mono text-lg sm:text-xl font-black text-white">{formatTime(tTime)}</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                        <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                          <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">PTN</p>
+                          <p className="text-sm sm:text-md font-black text-primary">{tPtn}</p>
+                        </div>
+                        <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                          <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">FG%</p>
+                          <p className="text-sm sm:text-md font-black text-white">{calculatePercentage(tFgm, tFga)}</p>
+                          <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{tFgm}/{tFga}</p>
+                        </div>
+                        <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                          <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">3P%</p>
+                          <p className="text-sm sm:text-md font-black text-white">{calculatePercentage(t3Fgm, t3Fga)}</p>
+                          <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{t3Fgm}/{t3Fga}</p>
+                        </div>
+                        <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                          <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">AST / REB / STL</p>
+                          <p className="text-sm sm:text-md font-black text-white">{tAst} / {tReb} / {tStl}</p>
+                        </div>
+                        <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                          <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">BLK / TO</p>
+                          <p className="text-sm sm:text-md font-black text-white">{tBlk} / {tTo}</p>
+                        </div>
+                        <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                          <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">FOUTEN (PF)</p>
+                          <p className="text-sm sm:text-md font-black text-red-400">{tPf}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className="space-y-4 sm:space-y-6">
                   <h4 className="text-lg sm:text-xl font-display font-black italic uppercase tracking-tighter text-white border-l-4 border-primary pl-4">Speler Statistieken</h4>
                   <div className="grid grid-cols-1 gap-3 sm:gap-4">
@@ -1275,6 +1604,7 @@ export default function App() {
                           <HistoryStat label="STL" value={player.stats.steals} />
                           <HistoryStat label="BLK" value={player.stats.blocks} />
                           <HistoryStat label="TO" value={player.stats.turnovers} />
+                          <HistoryStat label="PF" value={player.stats.pf || 0} />
                         </div>
 
                         {player.sessions.length > 0 && (

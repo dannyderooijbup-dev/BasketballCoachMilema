@@ -1304,8 +1304,9 @@ export default function App() {
       </nav>
 
       {/* Footer */}
-      <footer className="hidden md:block py-8 text-center text-[10px] text-text-muted uppercase tracking-[0.3em]">
-        Milema Webdesign × Jeremy Hooi Basketball
+      <footer className="py-8 text-center text-[10px] text-text-muted uppercase tracking-[0.3em] flex flex-col items-center gap-1">
+        <span>Milema Webdesign × Jeremy Hooi Basketball</span>
+        <span className="text-[9px] font-mono tracking-normal text-primary/80 lowercase mt-1 font-bold" id="app-version">v.1.00.1</span>
       </footer>
 
       {/* Modals */}

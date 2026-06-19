@@ -45,7 +45,8 @@ export default function App() {
 
   // Game Clock
   const [gameClockRunning, setGameClockRunning] = useState(false);
-  const [matchTime, setMatchTime] = useState(0); // Accumulated time in ms
+  const [currentPeriod, setCurrentPeriod] = useState<number>(1); // 1-4 standard, 5+ overtime
+  const [periodElapsed, setPeriodElapsed] = useState<Record<number, number>>({ 1: 0, 2: 0, 3: 0, 4: 0 });
   const [matchClockStartTime, setMatchClockStartTime] = useState<number | null>(null);
   const [isEditingClock, setIsEditingClock] = useState(false);
   const [editMin, setEditMin] = useState(0);
@@ -56,19 +57,98 @@ export default function App() {
   const [currentStarting5, setCurrentStarting5] = useState<string[]>([]);
 
   // Interval for live timer re-renders
-  const [_, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
 
-  const getLiveMatchTime = () => {
-    let liveMatchTime = matchTime;
+  const getLivePeriodElapsedTime = () => {
+    let elapsed = periodElapsed[currentPeriod] || 0;
     if (gameClockRunning && matchClockStartTime) {
-      liveMatchTime += (Date.now() - matchClockStartTime);
+      elapsed += (Date.now() - matchClockStartTime);
     }
-    return liveMatchTime;
+    return elapsed;
+  };
+
+  const getRemainingTime = () => {
+    const currentPeriodDuration = currentPeriod <= 4 ? 10 * 60 * 1000 : 5 * 60 * 1000;
+    return Math.max(0, currentPeriodDuration - getLivePeriodElapsedTime());
+  };
+
+  const getTotalMatchDuration = () => {
+    let total = 0;
+    const maxPeriod = Math.max(4, ...Object.keys(periodElapsed).map(Number), currentPeriod);
+    for (let p = 1; p <= maxPeriod; p++) {
+      if (p === currentPeriod) {
+        total += getLivePeriodElapsedTime();
+      } else {
+        total += periodElapsed[p] || 0;
+      }
+    }
+    return total;
+  };
+
+  const getPeriodLabel = (pNum: number) => {
+    if (pNum <= 4) {
+      return `Kwart ${pNum}`;
+    }
+    return `Verlenging ${pNum - 4} (OT${pNum - 4})`;
+  };
+
+  const switchPeriod = (targetPeriod: number) => {
+    const now = Date.now();
+    // 1. Pause clock if it is running to commit current elapsed times
+    if (gameClockRunning) {
+      if (matchClockStartTime) {
+        const elapsedSession = now - matchClockStartTime;
+        setPeriodElapsed(prev => ({
+          ...prev,
+          [currentPeriod]: (prev[currentPeriod] || 0) + elapsedSession
+        }));
+      }
+      setGameClockRunning(false);
+      setMatchClockStartTime(null);
+      
+      // Update players' time
+      setPlayers(prev => prev.map(p => {
+        if (p.isRunning && p.lastStartTime) {
+          const duration = now - p.lastStartTime;
+          return {
+            ...p,
+            totalTime: p.totalTime + duration,
+            lastStartTime: null,
+            sessions: [...p.sessions, { start: p.lastStartTime, end: now, duration }]
+          };
+        }
+        return p;
+      }));
+    } else {
+      // Clear open run startTimes (even if paused, just in case)
+      setPlayers(prev => prev.map(p => {
+        if (p.isRunning && p.lastStartTime) {
+          const duration = now - p.lastStartTime;
+          return {
+            ...p,
+            totalTime: p.totalTime + duration,
+            lastStartTime: null,
+            sessions: [...p.sessions, { start: p.lastStartTime, end: now, duration }]
+          };
+        }
+        return p;
+      }));
+    }
+
+    // 2. Set new period
+    setCurrentPeriod(targetPeriod);
+    setPeriodElapsed(prev => {
+      if (prev[targetPeriod] !== undefined) return prev;
+      return {
+        ...prev,
+        [targetPeriod]: 0
+      };
+    });
   };
 
   const startClockEditing = () => {
-    const totalMs = getLiveMatchTime();
-    const totalSec = Math.floor(totalMs / 1000);
+    const remainingMs = getRemainingTime();
+    const totalSec = Math.floor(remainingMs / 1000);
     const m = Math.floor(totalSec / 60);
     const s = totalSec % 60;
     setEditMin(m);
@@ -77,13 +157,19 @@ export default function App() {
   };
 
   const saveClockCorrection = () => {
-    const oldMs = getLiveMatchTime();
-    const newMs = (editMin * 60 + editSec) * 1000;
-    const delta = newMs - oldMs;
+    const currentPeriodDuration = currentPeriod <= 4 ? 10 * 60 * 1000 : 5 * 60 * 1000;
+    const oldElapsedTime = getLivePeriodElapsedTime();
+    const newRemainingMs = (editMin * 60 + editSec) * 1000;
+    const newElapsedTime = Math.max(0, Math.min(currentPeriodDuration, currentPeriodDuration - newRemainingMs));
+    const delta = newElapsedTime - oldElapsedTime;
     const now = Date.now();
 
-    // 1. Update Match Clock state
-    setMatchTime(newMs);
+    // 1. Update Period Elapsed state
+    setPeriodElapsed(prev => ({
+      ...prev,
+      [currentPeriod]: newElapsedTime
+    }));
+    
     if (gameClockRunning) {
       setMatchClockStartTime(now);
     } else {
@@ -95,7 +181,6 @@ export default function App() {
       if (!p.isRunning) return p;
 
       if (gameClockRunning) {
-        // Calculate player's live time before correction
         const playerLiveTime = p.lastStartTime ? p.totalTime + (now - p.lastStartTime) : p.totalTime;
         const newPlayerTime = Math.max(0, playerLiveTime + delta);
         return {
@@ -267,12 +352,18 @@ export default function App() {
     }
 
     try {
-      const savedMatchTime = localStorage.getItem('matchTime');
-      if (savedMatchTime) {
-        const val = JSON.parse(savedMatchTime);
-        if (typeof val === 'number') {
-          setMatchTime(val);
-        }
+      const savedPeriod = localStorage.getItem('currentPeriod');
+      if (savedPeriod) {
+        setCurrentPeriod(JSON.parse(savedPeriod));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    try {
+      const savedPeriodElapsed = localStorage.getItem('periodElapsed');
+      if (savedPeriodElapsed) {
+        setPeriodElapsed(JSON.parse(savedPeriodElapsed));
       }
     } catch (e) {
       console.error(e);
@@ -325,17 +416,54 @@ export default function App() {
     localStorage.setItem('isMatchActive', JSON.stringify(isMatchActive));
     localStorage.setItem('opponent', opponent);
     localStorage.setItem('gameClockRunning', JSON.stringify(gameClockRunning));
-    localStorage.setItem('matchTime', JSON.stringify(matchTime));
+    localStorage.setItem('currentPeriod', JSON.stringify(currentPeriod));
+    localStorage.setItem('periodElapsed', JSON.stringify(periodElapsed));
     localStorage.setItem('matchClockStartTime', JSON.stringify(matchClockStartTime));
     localStorage.setItem('globalActionsLog', JSON.stringify(globalActionsLog));
     localStorage.setItem('currentStarting5', JSON.stringify(currentStarting5));
-  }, [players, history, isMatchActive, opponent, gameClockRunning, matchTime, matchClockStartTime, globalActionsLog, currentStarting5]);
+  }, [players, history, isMatchActive, opponent, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5]);
 
   // Tick for UI updates
   useEffect(() => {
     const interval = setInterval(() => setTick(t => t + 1), 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Check if current period has run out and needs auto-pausing
+  useEffect(() => {
+    if (isMatchActive && gameClockRunning && matchClockStartTime) {
+      const currentPeriodDuration = currentPeriod <= 4 ? 10 * 60 * 1000 : 5 * 60 * 1000;
+      const liveElapsedTime = (periodElapsed[currentPeriod] || 0) + (Date.now() - matchClockStartTime);
+      
+      if (liveElapsedTime >= currentPeriodDuration) {
+        // Stop the clock immediately at the exact limit!
+        const excess = liveElapsedTime - currentPeriodDuration;
+        const exactEndTime = Date.now() - excess;
+        
+        setGameClockRunning(false);
+        setPeriodElapsed(prev => ({
+          ...prev,
+          [currentPeriod]: currentPeriodDuration
+        }));
+        setMatchClockStartTime(null);
+        
+        // Update all running players to the exact end of the quarter
+        setPlayers(prev => prev.map(p => {
+          if (!p.isRunning) return p;
+          if (p.lastStartTime) {
+            const duration = Math.max(0, exactEndTime - p.lastStartTime);
+            return {
+              ...p,
+              totalTime: p.totalTime + duration,
+              lastStartTime: null,
+              sessions: [...p.sessions, { start: p.lastStartTime, end: exactEndTime, duration }]
+            };
+          }
+          return p;
+        }));
+      }
+    }
+  }, [tick, gameClockRunning, matchClockStartTime, isMatchActive, currentPeriod, periodElapsed]);
 
   const addPlayer = (name: string, number: string, position: string) => {
     const newPlayer: Player = {
@@ -390,13 +518,24 @@ export default function App() {
   };
 
   const toggleGameClock = () => {
+    const currentPeriodDuration = currentPeriod <= 4 ? 10 * 60 * 1000 : 5 * 60 * 1000;
+    const currentElapsed = getLivePeriodElapsedTime();
+    if (!gameClockRunning && currentElapsed >= currentPeriodDuration) {
+      alert("Deze periode is afgelopen. Start de volgende periode of voeg een verlenging toe.");
+      return;
+    }
+
     const newRunningState = !gameClockRunning;
     setGameClockRunning(newRunningState);
     const now = Date.now();
 
     if (!newRunningState) {
       if (matchClockStartTime) {
-        setMatchTime(prev => prev + (now - matchClockStartTime));
+        const elapsedSession = now - matchClockStartTime;
+        setPeriodElapsed(prev => ({
+          ...prev,
+          [currentPeriod]: (prev[currentPeriod] || 0) + elapsedSession
+        }));
         setMatchClockStartTime(null);
       }
     } else {
@@ -610,7 +749,8 @@ export default function App() {
       };
     }));
     setIsMatchActive(true);
-    setMatchTime(0);
+    setCurrentPeriod(1);
+    setPeriodElapsed({ 1: 0, 2: 0, 3: 0, 4: 0 });
     setMatchClockStartTime(null);
     setGlobalActionsLog([]);
     setShowMatchStartModal(false);
@@ -633,10 +773,7 @@ export default function App() {
       return p;
     });
 
-    let finalMatchTime = matchTime;
-    if (gameClockRunning && matchClockStartTime) {
-      finalMatchTime += (now - matchClockStartTime);
-    }
+    const finalMatchTime = getTotalMatchDuration();
 
     const newEntry: MatchHistoryEntry = {
       matchId: generateId(),
@@ -651,7 +788,8 @@ export default function App() {
     setPlayers(finalPlayers); // Update local state for reset
     setIsMatchActive(false);
     setGameClockRunning(false);
-    setMatchTime(0);
+    setCurrentPeriod(1);
+    setPeriodElapsed({ 1: 0, 2: 0, 3: 0, 4: 0 });
     setMatchClockStartTime(null);
     setGlobalActionsLog([]);
     setCurrentStarting5([]);
@@ -675,7 +813,8 @@ export default function App() {
         };
       }));
       setGameClockRunning(false);
-      setMatchTime(0);
+      setCurrentPeriod(1);
+      setPeriodElapsed({ 1: 0, 2: 0, 3: 0, 4: 0 });
       setMatchClockStartTime(null);
       setGlobalActionsLog([]);
     }
@@ -693,7 +832,8 @@ export default function App() {
     })));
     setIsMatchActive(false);
     setGameClockRunning(false);
-    setMatchTime(0);
+    setCurrentPeriod(1);
+    setPeriodElapsed({ 1: 0, 2: 0, 3: 0, 4: 0 });
     setMatchClockStartTime(null);
     setGlobalActionsLog([]);
     setCurrentStarting5([]);
@@ -751,7 +891,14 @@ export default function App() {
              <Timer size={24} className={`sm:w-8 sm:h-8 ${gameClockRunning ? 'text-white' : (isMatchActive ? 'text-text-muted' : 'text-slate-700')}`} />
            </div>
            <div className={!isMatchActive ? 'opacity-30' : ''}>
-             <h2 className="text-xl sm:text-2xl font-black font-display italic uppercase tracking-tighter text-white">Wedstrijdklok</h2>
+             <div className="flex flex-wrap items-center gap-2">
+               <h2 className="text-xl sm:text-2xl font-black font-display italic uppercase tracking-tighter text-white">Wedstrijdklok</h2>
+               {isMatchActive && (
+                 <span className="bg-primary/20 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold font-mono tracking-wider uppercase">
+                   {getPeriodLabel(currentPeriod)}
+                 </span>
+               )}
+             </div>
              <div className="text-3xl sm:text-5xl font-mono font-black text-primary tracking-wider mt-1 sm:mt-2">
                {isEditingClock ? (
                 <div className="flex items-center gap-2 mt-1 sm:mt-2 text-base font-sans font-medium tracking-normal">
@@ -793,7 +940,9 @@ export default function App() {
                 </div>
               ) : (
                 <div className="flex items-center gap-3">
-                  <span>{isMatchActive ? formatTime(getLiveMatchTime()) : '00:00'}</span>
+                  <span className={getRemainingTime() === 0 && isMatchActive ? 'text-red-500 animate-pulse' : 'text-primary'}>
+                    {isMatchActive ? formatTime(getRemainingTime()) : '10:00'}
+                  </span>
                   {isMatchActive && (
                     <button 
                       onClick={startClockEditing}
@@ -807,9 +956,57 @@ export default function App() {
                 </div>
               )}
              </div>
-             <p className="text-text-muted text-[10px] sm:text-xs uppercase tracking-widest font-medium mt-1">{gameClockRunning ? 'Klok Loopt' : (isMatchActive ? 'Klok Gestopt' : 'Wacht op match...')}</p>
+             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
+               <p className="text-text-muted text-[10px] sm:text-xs uppercase tracking-widest font-medium">
+                 {gameClockRunning ? 'Klok Loopt' : (isMatchActive ? (getRemainingTime() === 0 ? 'Periode afgelopen' : 'Klok Gestopt') : 'Wacht op match...')}
+               </p>
+               {isMatchActive && (
+                 <div className="flex items-center gap-1.5 text-[10px] sm:text-xs border-l border-white/10 pl-3">
+                   <span className="text-text-muted uppercase tracking-widest font-medium font-sans">Periodes:</span>
+                   <select 
+                     value={currentPeriod}
+                     onChange={(e) => switchPeriod(parseInt(e.target.value))}
+                     className="bg-dark/80 text-white font-bold text-[11px] py-0.5 px-1.5 rounded border border-white/10 focus:outline-none focus:border-primary cursor-pointer"
+                     id="period-select"
+                   >
+                     <option value="1">Kwart 1 (10m)</option>
+                     <option value="2">Kwart 2 (10m)</option>
+                     <option value="3">Kwart 3 (10m)</option>
+                     <option value="4">Kwart 4 (10m)</option>
+                     {Array.from({ length: Math.max(1, currentPeriod - 3) }, (_, i) => (
+                       <option key={i} value={String(5 + i)}>
+                         Verlenging {i + 1} (5m)
+                       </option>
+                     ))}
+                   </select>
+                 </div>
+               )}
+             </div>
            </div>
          </div>
+         {isMatchActive && !gameClockRunning && (
+           <>
+             {currentPeriod < 4 && getRemainingTime() === 0 && (
+               <button
+                 onClick={() => switchPeriod(currentPeriod + 1)}
+                 className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600 text-white text-xs sm:text-sm font-black font-display uppercase italic px-5 py-4 rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-orange-500/20 active:scale-95 flex items-center justify-center gap-2"
+                 id="next-period-btn"
+               >
+                 Volgend Kwart
+               </button>
+             )}
+             {currentPeriod >= 4 && (
+               <button
+                 onClick={() => switchPeriod(currentPeriod + 1)}
+                 className="w-full sm:w-auto bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm font-black font-display uppercase italic px-5 py-4 rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-red-500/20 active:scale-95 flex items-center justify-center gap-2"
+                 id="add-ot-ot-btn"
+               >
+                 + Verlenging (OT)
+               </button>
+             )}
+           </>
+         )}
+
          <button 
            onClick={toggleGameClock}
            disabled={!isMatchActive}
@@ -889,7 +1086,7 @@ export default function App() {
                    <div className={`text-3xl font-mono font-black ${player.isRunning && gameClockRunning ? 'text-primary animate-pulse' : (player.isRunning ? 'text-orange-400' : 'text-white')}`}>
                      {formatTime(liveTime)}
                    </div>
-                   <div className="text-[10px] text-text-muted uppercase font-bold tracking-tight">Beurten: {player.sessions.length}</div>
+                   {/* Beurten count removed */}
                  </div>
                </div>
  
@@ -1608,18 +1805,7 @@ export default function App() {
                           <HistoryStat label="PF" value={player.stats.pf || 0} />
                         </div>
 
-                        {player.sessions.length > 0 && (
-                          <div className="space-y-2">
-                            <p className="text-[10px] text-text-muted uppercase font-bold tracking-widest">Sessie Logs ({player.sessions.length} beurten)</p>
-                            <div className="flex flex-wrap gap-2">
-                              {player.sessions.map((s, idx) => (
-                                <div key={idx} className="bg-dark/50 px-2 py-1 rounded text-[10px] font-mono border border-white/5">
-                                  {formatTime(s.duration)}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                        {/* Sessie Logs removed */}
                       </div>
                     ))}
                   </div>

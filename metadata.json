@@ -1,6 +1,6 @@
 {
   "name": "Basketball Coach - GameStats",
-  "description": "Een professionele coaching tool voor het bijhouden van speeltijd, beurten en statistieken van basketballers.",
+  "description": "Een professionele coaching tool voor het bijhouden van speeltijd, periodes en uitgebreide statistieken van basketballers.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

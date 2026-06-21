@@ -1,0 +1,29 @@
+{
+  "collections": {
+    "users": {
+      "description": "Collection of basketball coaches and their data",
+      "documents": {
+        "{uid}": {
+          "schema": {
+            "profiel": {
+              "type": "map",
+              "description": "User profile details like email and last active timestamp"
+            },
+            "spelers": {
+              "type": "array",
+              "description": "List of tracked basketball players and their stats"
+            },
+            "wedstrijden": {
+              "type": "array",
+              "description": "Historical matches recorded by the coach"
+            },
+            "instellingen": {
+              "type": "map",
+              "description": "Active game settings, timers, matches, and app preferences"
+            }
+          }
+        }
+      }
+    }
+  }
+}

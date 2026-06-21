@@ -27,8 +27,10 @@ import { Player, MatchHistoryEntry, Tab, Position, Session } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
 import { exportMatchToPDF, exportSeasonStatsToPDF } from './pdfUtils';
 import { User } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import AuthScreen from './components/AuthScreen';
+import { db } from './firebase';
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -39,6 +41,8 @@ const generateId = () => {
 
 export default function App() {
   const { currentUser, loading: loadingAuth, logout } = useAuth();
+  const [loadingSync, setLoadingSync] = useState(false);
+  const hasSyncedFromFirestore = useRef(false);
 
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [players, setPlayers] = useState<Player[]>([]);
@@ -414,9 +418,119 @@ export default function App() {
     initialLoadDone.current = true;
   }, []);
 
-  // Save to localStorage
+  // Firestore Sync & Migration Hook
   useEffect(() => {
-    if (!initialLoadDone.current) return;
+    if (!currentUser) {
+      hasSyncedFromFirestore.current = false;
+      return;
+    }
+
+    const syncWithFirestore = async () => {
+      setLoadingSync(true);
+      try {
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        const docSnap = await getDoc(userDocRef);
+
+        if (docSnap.exists()) {
+          // Document exists: load master copy into React state & localStorage
+          const data = docSnap.data();
+          
+          if (Array.isArray(data.spelers)) {
+            setPlayers(data.spelers);
+            localStorage.setItem('players', JSON.stringify(data.spelers));
+          }
+          if (Array.isArray(data.wedstrijden)) {
+            setHistory(data.wedstrijden);
+            localStorage.setItem('matchesHistory', JSON.stringify(data.wedstrijden));
+          }
+          
+          if (data.instellingen) {
+            const inst = data.instellingen;
+            if (inst.isMatchActive !== undefined) {
+              setIsMatchActive(inst.isMatchActive);
+              localStorage.setItem('isMatchActive', JSON.stringify(inst.isMatchActive));
+            }
+            if (inst.opponent !== undefined) {
+              setOpponent(inst.opponent);
+              localStorage.setItem('opponent', inst.opponent);
+            }
+            if (inst.gameClockRunning !== undefined) {
+              setGameClockRunning(inst.gameClockRunning);
+              localStorage.setItem('gameClockRunning', JSON.stringify(inst.gameClockRunning));
+            }
+            if (inst.currentPeriod !== undefined) {
+              setCurrentPeriod(inst.currentPeriod);
+              localStorage.setItem('currentPeriod', JSON.stringify(inst.currentPeriod));
+            }
+            if (inst.periodElapsed !== undefined) {
+              setPeriodElapsed(inst.periodElapsed);
+              localStorage.setItem('periodElapsed', JSON.stringify(inst.periodElapsed));
+            }
+            if (inst.matchClockStartTime !== undefined) {
+              setMatchClockStartTime(inst.matchClockStartTime);
+              localStorage.setItem('matchClockStartTime', JSON.stringify(inst.matchClockStartTime));
+            }
+            if (inst.globalActionsLog !== undefined) {
+              setGlobalActionsLog(inst.globalActionsLog);
+              localStorage.setItem('globalActionsLog', JSON.stringify(inst.globalActionsLog));
+            }
+            if (inst.currentStarting5 !== undefined) {
+              setCurrentStarting5(inst.currentStarting5);
+              localStorage.setItem('currentStarting5', JSON.stringify(inst.currentStarting5));
+            }
+          }
+        } else {
+          // Document does not exist (first login):
+          // Migrate current state (loaded from localstorage or defaults) to Firestore
+          const initialDocData = {
+            profiel: {
+              email: currentUser.email,
+              lastLogin: Date.now(),
+              migratedAt: Date.now()
+            },
+            spelers: players,
+            wedstrijden: history,
+            instellingen: {
+              isMatchActive,
+              opponent,
+              gameClockRunning,
+              currentPeriod,
+              periodElapsed,
+              matchClockStartTime,
+              globalActionsLog,
+              currentStarting5
+            }
+          };
+
+          await setDoc(userDocRef, initialDocData);
+        }
+
+        hasSyncedFromFirestore.current = true;
+      } catch (err) {
+        console.error("Fout tijdens Firestore synchronisatie:", err);
+      } finally {
+        setLoadingSync(false);
+      }
+    };
+
+    // Wait until local storage is loaded to avoid racing write of initial empty state
+    if (initialLoadDone.current) {
+      syncWithFirestore();
+    } else {
+      const checkInterval = setInterval(() => {
+        if (initialLoadDone.current) {
+          clearInterval(checkInterval);
+          syncWithFirestore();
+        }
+      }, 50);
+    }
+  }, [currentUser]);
+
+  // Save changes to localStorage AND Firestore
+  useEffect(() => {
+    if (!currentUser || !hasSyncedFromFirestore.current) return;
+
+    // Save to localStorage
     localStorage.setItem('players', JSON.stringify(players));
     localStorage.setItem('matchesHistory', JSON.stringify(history));
     localStorage.setItem('isMatchActive', JSON.stringify(isMatchActive));
@@ -427,7 +541,66 @@ export default function App() {
     localStorage.setItem('matchClockStartTime', JSON.stringify(matchClockStartTime));
     localStorage.setItem('globalActionsLog', JSON.stringify(globalActionsLog));
     localStorage.setItem('currentStarting5', JSON.stringify(currentStarting5));
-  }, [players, history, isMatchActive, opponent, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5]);
+
+    // Save to Firestore
+    const userDocRef = doc(db, 'users', currentUser.uid);
+    setDoc(userDocRef, {
+      profiel: {
+        email: currentUser.email,
+        lastUpdated: Date.now()
+      },
+      spelers: players,
+      wedstrijden: history,
+      instellingen: {
+        isMatchActive,
+        opponent,
+        gameClockRunning,
+        currentPeriod,
+        periodElapsed,
+        matchClockStartTime,
+        globalActionsLog,
+        currentStarting5
+      }
+    }, { merge: true }).catch(err => {
+      console.error("Fout bij opslaan naar Firestore:", err);
+    });
+  }, [players, history, isMatchActive, opponent, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5, currentUser]);
+
+  const handleLogout = async () => {
+    try {
+      // Clear all React states to defaults
+      setPlayers([]);
+      setHistory([]);
+      setIsMatchActive(false);
+      setOpponent('');
+      setGameClockRunning(false);
+      setCurrentPeriod(1);
+      setPeriodElapsed({ 1: 0, 2: 0, 3: 0, 4: 0 });
+      setMatchClockStartTime(null);
+      setGlobalActionsLog([]);
+      setCurrentStarting5([]);
+      
+      // Clear localStorage
+      localStorage.removeItem('players');
+      localStorage.removeItem('matchesHistory');
+      localStorage.removeItem('isMatchActive');
+      localStorage.removeItem('opponent');
+      localStorage.removeItem('gameClockRunning');
+      localStorage.removeItem('currentPeriod');
+      localStorage.removeItem('periodElapsed');
+      localStorage.removeItem('matchClockStartTime');
+      localStorage.removeItem('globalActionsLog');
+      localStorage.removeItem('currentStarting5');
+
+      // Reset sync variables
+      hasSyncedFromFirestore.current = false;
+
+      // Sign out
+      await logout();
+    } catch (e) {
+      console.error("Fout bij het uitloggen:", e);
+    }
+  };
 
   // Tick for UI updates
   useEffect(() => {
@@ -1490,6 +1663,15 @@ export default function App() {
     return <AuthScreen />;
   }
 
+  if (loadingSync) {
+    return (
+      <div className="min-h-screen bg-dark flex flex-col items-center justify-center p-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+        <p className="text-text-muted font-mono uppercase tracking-widest text-[10px] sm:text-xs">Gegevens synchroniseren...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen pb-24 md:pb-0 md:pt-6 max-w-5xl mx-auto px-4 md:px-6">
       <header className="py-4 sm:py-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -1510,7 +1692,7 @@ export default function App() {
               <span className="text-white font-mono font-medium max-w-[140px] sm:max-w-[170px] truncate">{currentUser?.email}</span>
             </div>
             <button
-              onClick={logout}
+              onClick={handleLogout}
               className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-2 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-1.5 border border-red-500/10 text-[10px] sm:text-xs font-bold uppercase tracking-wider cursor-pointer"
               title="Log uit"
               id="header-logout-btn"

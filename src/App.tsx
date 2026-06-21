@@ -69,6 +69,7 @@ export default function App() {
   const [teamPlayers, setTeamPlayers] = useState<TeamPlayer[]>([]);
   const [showAddTeamModal, setShowAddTeamModal] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
+  const [isSavingTeam, setIsSavingTeam] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string>('all');
   const [players, setPlayers] = useState<Player[]>([]);
 
@@ -929,13 +930,16 @@ export default function App() {
     }
   };
 
-  const createTeam = async (name: string) => {
-    if (!currentUser) return;
+  const createTeam = async (name: string): Promise<boolean> => {
+    if (!currentUser) {
+      alert("Je moet ingelogd zijn om een team aan te maken.");
+      return false;
+    }
     
     // UI Guard
     if (teams.length >= 3) {
       alert("Helaas, maximaal 3 teams is toegestaan onder dit account.");
-      return;
+      return false;
     }
 
     const tId = generateId();
@@ -965,8 +969,11 @@ export default function App() {
       setTeams(prev => [...prev, newTeam]);
       setActiveTeamId(tId); // auto select newly created team as active
       localStorage.setItem('activeTeamId', tId);
-    } catch (err) {
+      return true;
+    } catch (err: any) {
       console.error("Fout bij aanmaken van team:", err);
+      alert(`Fout bij het opslaan van het team in de database: ${err?.message || err}`);
+      return false;
     }
   };
 
@@ -1589,16 +1596,27 @@ export default function App() {
                 </div>
                 
                 <button
-                  onClick={() => {
-                    if (!newTeamName.trim()) return;
-                    createTeam(newTeamName.trim());
-                    setShowAddTeamModal(false);
-                    setNewTeamName('');
+                  onClick={async () => {
+                    if (!newTeamName.trim() || isSavingTeam) return;
+                    setIsSavingTeam(true);
+                    const success = await createTeam(newTeamName.trim());
+                    setIsSavingTeam(false);
+                    if (success) {
+                      setShowAddTeamModal(false);
+                      setNewTeamName('');
+                    }
                   }}
-                  disabled={!newTeamName.trim()}
-                  className="w-full bg-primary hover:bg-primary/95 font-display font-black uppercase italic tracking-widest py-3 sm:py-4 rounded-xl text-white disabled:opacity-30 disabled:cursor-not-allowed text-xs sm:text-sm active:scale-95 transition-all shadow-lg cursor-pointer animate-pulse"
+                  disabled={!newTeamName.trim() || isSavingTeam}
+                  className="w-full bg-primary hover:bg-primary/95 font-display font-black uppercase italic tracking-widest py-3 sm:py-4 rounded-xl text-white disabled:opacity-30 disabled:cursor-not-allowed text-xs sm:text-sm active:scale-95 transition-all shadow-lg cursor-pointer flex items-center justify-center gap-2"
                 >
-                  Team Opslaan
+                  {isSavingTeam ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                      <span>Bezig met opslaan...</span>
+                    </>
+                  ) : (
+                    "Team Opslaan"
+                  )}
                 </button>
               </div>
             </motion.div>

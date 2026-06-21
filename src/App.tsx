@@ -22,13 +22,26 @@ import {
   RotateCcw,
   Pencil,
   LogOut,
-  User as UserIcon
+  User as UserIcon,
+  Shield,
+  Briefcase
 } from 'lucide-react';
-import { Player, MatchHistoryEntry, Tab, Position, Session } from './types';
+import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
 import { exportMatchToPDF, exportSeasonStatsToPDF } from './pdfUtils';
 import { User } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  getDocs, 
+  collection, 
+  query, 
+  where, 
+  deleteDoc, 
+  writeBatch,
+  updateDoc 
+} from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import AuthScreen from './components/AuthScreen';
 import AccountScreen from './components/AccountScreen';
@@ -52,7 +65,25 @@ export default function App() {
   const [profileNewsletter, setProfileNewsletter] = useState(false);
 
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamPlayers, setTeamPlayers] = useState<TeamPlayer[]>([]);
+  const [showAddTeamModal, setShowAddTeamModal] = useState(false);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [activeTeamId, setActiveTeamId] = useState<string>('all');
   const [players, setPlayers] = useState<Player[]>([]);
+
+  const getFilteredPlayers = () => {
+    if (activeTeamId === 'all') return players;
+    const mappedPlayerIds = teamPlayers
+      .filter(tp => tp.teamId === activeTeamId)
+      .map(tp => tp.playerId);
+    return players.filter(p => mappedPlayerIds.includes(p.id));
+  };
+  const filteredPlayers = getFilteredPlayers();
+
+  useEffect(() => {
+    localStorage.setItem('activeTeamId', activeTeamId);
+  }, [activeTeamId]);
   const [history, setHistory] = useState<MatchHistoryEntry[]>([]);
   const [isMatchActive, setIsMatchActive] = useState(false);
   const [opponent, setOpponent] = useState('');
@@ -442,6 +473,11 @@ export default function App() {
       if (savedProfileNewsletter) setProfileNewsletter(JSON.parse(savedProfileNewsletter) === true);
     } catch (e) { console.error(e); }
 
+    try {
+      const savedActiveTeamId = localStorage.getItem('activeTeamId');
+      if (savedActiveTeamId) setActiveTeamId(savedActiveTeamId);
+    } catch (e) { console.error(e); }
+
     initialLoadDone.current = true;
   }, []);
 
@@ -457,15 +493,10 @@ export default function App() {
       try {
         const userDocRef = doc(db, 'users', currentUser.uid);
         const docSnap = await getDoc(userDocRef);
+        let data: any = null;
 
         if (docSnap.exists()) {
-          // Document exists: load master copy into React state & localStorage
-          const data = docSnap.data();
-          
-          if (Array.isArray(data.spelers)) {
-            setPlayers(data.spelers);
-            localStorage.setItem('players', JSON.stringify(data.spelers));
-          }
+          data = docSnap.data();
           if (Array.isArray(data.wedstrijden)) {
             setHistory(data.wedstrijden);
             localStorage.setItem('matchesHistory', JSON.stringify(data.wedstrijden));
@@ -536,7 +567,8 @@ export default function App() {
               functie: profileRole,
               nieuwsbrief: profileNewsletter,
               lastLogin: Date.now(),
-              migratedAt: Date.now()
+              migratedAt: Date.now(),
+              teamCount: 0
             },
             spelers: players,
             wedstrijden: history,
@@ -555,6 +587,94 @@ export default function App() {
           await setDoc(userDocRef, initialDocData);
         }
 
+        // 1. Fetch Teams
+        const teamsQuery = query(collection(db, 'teams'), where('userId', '==', currentUser.uid));
+        const teamsSnap = await getDocs(teamsQuery);
+        let loadedTeams: Team[] = [];
+        teamsSnap.forEach(tDoc => {
+          loadedTeams.push({ id: tDoc.id, ...tDoc.data() } as Team);
+        });
+        setTeams(loadedTeams);
+
+        // 2. Fetch Players
+        const playersQuery = query(collection(db, 'players'), where('userId', '==', currentUser.uid));
+        const playersSnap = await getDocs(playersQuery);
+        let loadedPlayers: Player[] = [];
+        playersSnap.forEach(pDoc => {
+          loadedPlayers.push({ id: pDoc.id, ...pDoc.data() } as Player);
+        });
+
+        // 3. Fetch teamPlayers mappings
+        let loadedMappings: TeamPlayer[] = [];
+        if (loadedTeams.length > 0) {
+          const teamIds = loadedTeams.map(t => t.id);
+          const tpQuery = query(collection(db, 'teamPlayers'), where('teamId', 'in', teamIds));
+          const tpSnap = await getDocs(tpQuery);
+          tpSnap.forEach(tpDoc => {
+            loadedMappings.push({ id: tpDoc.id, ...tpDoc.data() } as TeamPlayer);
+          });
+        }
+        setTeamPlayers(loadedMappings);
+
+        // 4. Backward Compatibility / Migration Check
+        if (loadedPlayers.length === 0 && data && Array.isArray(data.spelers) && data.spelers.length > 0) {
+          console.log("Migrating players to root /players collection...");
+          const batch = writeBatch(db);
+          
+          const newTeamId = generateId();
+          const defaultTeam: Team = {
+            id: newTeamId,
+            name: `${data.profiel?.club || profileClub || 'Mijn Coach'} - Team 1`,
+            userId: currentUser.uid,
+            createdAt: Date.now()
+          };
+          batch.set(doc(db, 'teams', newTeamId), defaultTeam);
+          loadedTeams.push(defaultTeam);
+
+          batch.set(userDocRef, {
+            profiel: {
+              teamCount: 1
+            }
+          }, { merge: true });
+
+          data.spelers.forEach((p: Player) => {
+            const newPlayerDoc = {
+              ...p,
+              userId: currentUser.uid,
+              createdAt: Date.now()
+            };
+            batch.set(doc(db, 'players', p.id), newPlayerDoc);
+            loadedPlayers.push(p);
+
+            const mappingId = generateId();
+            const mapping: TeamPlayer = {
+              id: mappingId,
+              teamId: newTeamId,
+              playerId: p.id,
+              createdAt: Date.now()
+            };
+            batch.set(doc(db, 'teamPlayers', mappingId), mapping);
+            loadedMappings.push(mapping);
+          });
+
+          await batch.commit();
+          setTeams(loadedTeams);
+          setTeamPlayers(loadedMappings);
+        }
+
+        setPlayers(loadedPlayers);
+        localStorage.setItem('players', JSON.stringify(loadedPlayers));
+
+        const actualTeamCount = loadedTeams.length;
+        const currentStoredTeamCount = (data?.profiel?.teamCount !== undefined) ? data.profiel.teamCount : 0;
+        if (actualTeamCount !== currentStoredTeamCount) {
+          await setDoc(userDocRef, {
+            profiel: {
+              teamCount: actualTeamCount
+            }
+          }, { merge: true });
+        }
+
         hasSyncedFromFirestore.current = true;
       } catch (err) {
         console.error("Fout tijdens Firestore synchronisatie:", err);
@@ -563,7 +683,6 @@ export default function App() {
       }
     };
 
-    // Wait until local storage is loaded to avoid racing write of initial empty state
     if (initialLoadDone.current) {
       syncWithFirestore();
     } else {
@@ -624,11 +743,14 @@ export default function App() {
     });
   }, [players, history, isMatchActive, opponent, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5, currentUser, profileName, profileClub, profileRole, profileNewsletter]);
 
-  const handleLogout = async () => {
+   const handleLogout = async () => {
     try {
       // Clear all React states to defaults
       setPlayers([]);
       setHistory([]);
+      setTeams([]);
+      setTeamPlayers([]);
+      setActiveTeamId('all');
       setIsMatchActive(false);
       setOpponent('');
       setGameClockRunning(false);
@@ -645,6 +767,7 @@ export default function App() {
       // Clear localStorage
       localStorage.removeItem('players');
       localStorage.removeItem('matchesHistory');
+      localStorage.removeItem('activeTeamId');
       localStorage.removeItem('isMatchActive');
       localStorage.removeItem('opponent');
       localStorage.removeItem('gameClockRunning');
@@ -710,9 +833,12 @@ export default function App() {
     }
   }, [tick, gameClockRunning, matchClockStartTime, isMatchActive, currentPeriod, periodElapsed]);
 
-  const addPlayer = (name: string, number: string, position: string) => {
+  const addPlayer = async (name: string, number: string, position: string, teamIdToAssociate?: string) => {
+    if (!currentUser) return;
+    
+    const newPlayerId = generateId();
     const newPlayer: Player = {
-      id: generateId(),
+      id: newPlayerId,
       name,
       number,
       position,
@@ -723,11 +849,168 @@ export default function App() {
       stats: { ...INITIAL_STATS },
       lastActions: []
     };
-    setPlayers([...players, newPlayer]);
+
+    try {
+      const batch = writeBatch(db);
+      
+      // Save global player structure
+      const playerDocRef = doc(db, 'players', newPlayerId);
+      batch.set(playerDocRef, {
+        ...newPlayer,
+        userId: currentUser.uid,
+        createdAt: Date.now()
+      });
+
+      // Target team association: either passed teamId, or activeTeamId (if not 'all')
+      const targetTeamId = teamIdToAssociate || (activeTeamId !== 'all' ? activeTeamId : null);
+      let newMapping: TeamPlayer | null = null;
+
+      if (targetTeamId) {
+        const mappingId = generateId();
+        newMapping = {
+          id: mappingId,
+          teamId: targetTeamId,
+          playerId: newPlayerId,
+          createdAt: Date.now()
+        };
+        const mappingDocRef = doc(db, 'teamPlayers', mappingId);
+        batch.set(mappingDocRef, newMapping);
+      }
+
+      await batch.commit();
+
+      // Update React State
+      setPlayers(prev => [...prev, newPlayer]);
+      if (newMapping) {
+        setTeamPlayers(prev => [...prev, newMapping!]);
+      }
+    } catch (err) {
+      console.error("Fout bij het toevoegen van speler via Firestore:", err);
+    }
   };
 
-  const removePlayer = (id: string) => {
-    setPlayers(players.filter(p => p.id !== id));
+  const removePlayer = async (id: string, deleteGlobally: boolean = false) => {
+    if (!currentUser) return;
+
+    try {
+      const batch = writeBatch(db);
+
+      if (activeTeamId !== 'all' && !deleteGlobally) {
+        // Just unlink from the current active team
+        const mappingToDelete = teamPlayers.find(tp => tp.teamId === activeTeamId && tp.playerId === id);
+        if (mappingToDelete) {
+          batch.delete(doc(db, 'teamPlayers', mappingToDelete.id));
+          await batch.commit();
+          setTeamPlayers(prev => prev.filter(tp => tp.id !== mappingToDelete.id));
+        }
+      } else {
+        // Delete globally
+        if (!window.confirm("Weet je zeker dat je deze speler HELEMAAL wilt verwijderen uit de database? Al zijn statistieken en team-koppelingen worden permanent gewist.")) {
+          return;
+        }
+        
+        // 1. Delete player doc
+        batch.delete(doc(db, 'players', id));
+        
+        // 2. Delete all related teamPlayer mappings
+        const mappingsToDelete = teamPlayers.filter(tp => tp.playerId === id);
+        mappingsToDelete.forEach(m => {
+          batch.delete(doc(db, 'teamPlayers', m.id));
+        });
+
+        await batch.commit();
+
+        // Update state
+        setPlayers(prev => prev.filter(p => p.id !== id));
+        setTeamPlayers(prev => prev.filter(tp => tp.playerId !== id));
+      }
+    } catch (err) {
+      console.error("Fout bij het verwijderen/loskoppelen van speler:", err);
+    }
+  };
+
+  const createTeam = async (name: string) => {
+    if (!currentUser) return;
+    
+    // UI Guard
+    if (teams.length >= 3) {
+      alert("Helaas, maximaal 3 teams is toegestaan onder dit account.");
+      return;
+    }
+
+    const tId = generateId();
+    const newTeam: Team = {
+      id: tId,
+      name,
+      userId: currentUser.uid,
+      createdAt: Date.now()
+    };
+
+    try {
+      const batch = writeBatch(db);
+      
+      // Update /teams/{tId}
+      batch.set(doc(db, 'teams', tId), newTeam);
+      
+      // Update teamCount in /users/{userId}
+      const userRef = doc(db, 'users', currentUser.uid);
+      batch.set(userRef, {
+        profiel: {
+          teamCount: teams.length + 1
+        }
+      }, { merge: true });
+
+      await batch.commit();
+
+      setTeams(prev => [...prev, newTeam]);
+      setActiveTeamId(tId); // auto select newly created team as active
+      localStorage.setItem('activeTeamId', tId);
+    } catch (err) {
+      console.error("Fout bij aanmaken van team:", err);
+    }
+  };
+
+  const deleteTeam = async (tId: string) => {
+    if (!currentUser) return;
+
+    if (!window.confirm("Weet je zeker dat je dit team wilt verwijderen? Spelers die erin zitten blijven bestaan, maar hun koppeling aan dit team wordt permanent verwijderd.")) {
+      return;
+    }
+
+    try {
+      const batch = writeBatch(db);
+
+      // 1. Delete /teams/{tId}
+      batch.delete(doc(db, 'teams', tId));
+
+      // 2. Delete all related /teamPlayers mappings
+      const relatedMappings = teamPlayers.filter(tp => tp.teamId === tId);
+      relatedMappings.forEach(tp => {
+        batch.delete(doc(db, 'teamPlayers', tp.id));
+      });
+
+      // 3. Update teamCount in /users/{userId}
+      const userRef = doc(db, 'users', currentUser.uid);
+      const newTeamCount = Math.max(0, teams.length - 1);
+      batch.set(userRef, {
+        profiel: {
+          teamCount: newTeamCount
+        }
+      }, { merge: true });
+
+      await batch.commit();
+
+      // Update states
+      setTeams(prev => prev.filter(t => t.id !== tId));
+      setTeamPlayers(prev => prev.filter(tp => tp.teamId !== tId));
+      
+      if (activeTeamId === tId) {
+        setActiveTeamId('all');
+        localStorage.setItem('activeTeamId', 'all');
+      }
+    } catch (err) {
+      console.error("Fout bij verwijderen van team:", err);
+    }
   };
 
   const toggleTimer = (id: string) => {
@@ -1094,6 +1377,237 @@ export default function App() {
     return 'text-base sm:text-lg leading-tight font-bold';
   };
 
+  const renderTeams = () => {
+    const isLimitReached = teams.length >= 3;
+
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center bg-surface/50 p-4 rounded-2xl border border-white/5 backdrop-blur-sm">
+          <div>
+            <h2 className="text-xl sm:text-3xl font-display font-black italic uppercase tracking-tighter text-white">Mijn Teams</h2>
+            <p className="text-[10px] text-text-muted uppercase tracking-widest font-bold mt-1">
+              {teams.length} van de 3 teams gebruikt
+            </p>
+          </div>
+          <button 
+            onClick={() => {
+              if (isLimitReached) {
+                alert("Je hebt de limiet van maximaal 3 teams bereikt!");
+                return;
+              }
+              setShowAddTeamModal(true);
+            }}
+            disabled={isLimitReached}
+            className={`font-display font-black uppercase italic tracking-tighter shadow-lg flex items-center gap-2 active:scale-95 transition-all text-xs sm:text-base p-2.5 sm:px-6 sm:py-3 rounded-xl cursor-pointer ${
+              isLimitReached 
+                ? 'bg-white/10 text-white/40 cursor-not-allowed shadow-none' 
+                : 'bg-primary text-white hover:bg-primary/90 shadow-primary/20'
+            }`}
+          >
+            <Plus size={18} /> Team Toevoegen
+          </button>
+        </div>
+
+        {isLimitReached && (
+          <div className="bg-primary/10 border border-primary/20 p-4 rounded-2xl text-center text-xs sm:text-sm text-primary font-bold">
+            💡 Je hebt de limiet van 3 teams bereikt. Verwijder een team om een nieuwe te kunnen maken, of neem deel aan premium functionaliteiten!
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {teams.map(team => {
+            const teamRelatedPlayers = players.filter(p => 
+              teamPlayers.some(tp => tp.teamId === team.id && tp.playerId === p.id)
+            );
+            const isActive = activeTeamId === team.id;
+
+            return (
+              <div 
+                key={team.id} 
+                className={`bg-surface rounded-2xl border transition-all p-5 flex flex-col justify-between ${
+                  isActive 
+                    ? 'border-primary ring-1 ring-primary/30 shadow-xl shadow-primary/5 bg-surface/90' 
+                    : 'border-white/5 hover:border-white/10 shadow-lg'
+                }`}
+              >
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <span className="text-[10px] text-text-muted uppercase font-bold tracking-[0.15em] font-mono">
+                      {isActive ? '● Actief Team' : 'Team'}
+                    </span>
+                    <button 
+                      onClick={() => deleteTeam(team.id)}
+                      className="text-red-400 hover:text-red-300 hover:bg-red-400/10 p-2 rounded-lg transition-all cursor-pointer"
+                      title="Team Verwijderen"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  
+                  <h3 className="text-xl font-display font-black uppercase italic tracking-tight text-white mb-2 truncate">
+                    {team.name}
+                  </h3>
+                  
+                  <p className="text-xs text-text-muted font-medium mb-4 flex items-center gap-1.5 font-sans">
+                    <Users size={14} className="text-primary/70" /> {teamRelatedPlayers.length} Spelers gekoppeld
+                  </p>
+
+                  <div className="space-y-1.5 mb-6 max-h-[140px] overflow-y-auto pr-1">
+                    {teamRelatedPlayers.map(p => (
+                      <div key={p.id} className="flex justify-between items-center text-xs bg-dark/40 py-1.5 px-2.5 rounded-lg border border-white/2">
+                        <span className="text-white/90 truncate mr-3 font-medium">#{p.number} {p.name}</span>
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Wil je ${p.name} loskoppelen van team ${team.name}?`)) {
+                              const mappingToDelete = teamPlayers.find(tp => tp.teamId === team.id && tp.playerId === p.id);
+                              if (mappingToDelete) {
+                                try {
+                                  await deleteDoc(doc(db, 'teamPlayers', mappingToDelete.id));
+                                  setTeamPlayers(prev => prev.filter(tp => tp.id !== mappingToDelete.id));
+                                } catch (e) {
+                                  console.error("Loskoppelen mislukt:", e);
+                                }
+                              }
+                            }
+                          }}
+                          className="text-[10px] uppercase font-bold text-red-400/80 hover:text-red-400 transition-colors cursor-pointer"
+                        >
+                          Ontkoppel
+                        </button>
+                      </div>
+                    ))}
+                    {teamRelatedPlayers.length === 0 && (
+                      <p className="text-xs text-text-muted/60 italic py-2 text-center select-none">Nog geen spelers gekoppeld.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2 mt-auto">
+                  <div className="bg-dark/40 p-3 rounded-xl border border-white/5">
+                    <label className="block text-[10px] text-text-muted uppercase font-bold tracking-wider mb-2">Bestaande speler koppelen</label>
+                    <div className="flex gap-2">
+                      <select
+                        onChange={(e) => {
+                          const pId = e.target.value;
+                          if (pId) {
+                            const mappingId = generateId();
+                            const mapping: TeamPlayer = {
+                              id: mappingId,
+                              teamId: team.id,
+                              playerId: pId,
+                              createdAt: Date.now()
+                            };
+                            setDoc(doc(db, 'teamPlayers', mappingId), mapping)
+                              .then(() => {
+                                setTeamPlayers(prev => [...prev, mapping]);
+                              })
+                              .catch(err => console.error("Koppelen mislukt:", err));
+                          }
+                          e.target.value = '';
+                        }}
+                        className="w-full bg-dark text-white border border-white/10 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary cursor-pointer"
+                      >
+                        <option value="">Selecteer speler...</option>
+                        {players
+                          .filter(p => !teamRelatedPlayers.some(tp => tp.playerId === p.id))
+                          .map(p => (
+                            <option key={p.id} value={p.id}>
+                              #{p.number} - {p.name}
+                            </option>
+                          ))
+                        }
+                      </select>
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      setActiveTeamId(team.id);
+                    }}
+                    className={`w-full py-2.5 rounded-xl text-center font-display font-medium text-xs uppercase italic tracking-widest transition-all cursor-pointer ${
+                      isActive 
+                        ? 'bg-primary/20 text-primary border border-primary/20 font-black' 
+                        : 'bg-white/5 hover:bg-white/10 text-white/90'
+                    }`}
+                  >
+                    {isActive ? 'Momenteel Actief' : 'Selecteer als Actief'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          {teams.length === 0 && (
+            <div className="col-span-full py-16 text-center text-text-muted bg-surface/30 rounded-3xl border border-dashed border-white/10 w-full">
+              <Shield className="mx-auto mb-4 opacity-10 animate-bounce" size={48} />
+              <p className="text-sm font-medium text-white mb-2">Je hebt nog geen teams aangemaakt</p>
+              <p className="text-xs text-text-muted/65 max-w-sm mx-auto mb-4">
+                Maak eerst een team aan om spelers te groeperen en stats per wedstrijd te tracken!
+              </p>
+              <button 
+                onClick={() => setShowAddTeamModal(true)}
+                className="bg-primary hover:bg-primary/95 text-white py-2 px-6 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer active:scale-95 shadow-md"
+              >
+                Eerste Team Maken
+              </button>
+            </div>
+          )}
+        </div>
+
+        {showAddTeamModal && (
+          <div className="fixed inset-0 bg-dark/95 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-surface border border-white/10 w-full max-w-md rounded-3xl p-6 sm:p-8 shadow-2xl relative"
+            >
+              <button 
+                onClick={() => {
+                  setShowAddTeamModal(false);
+                  setNewTeamName('');
+                }}
+                className="absolute top-6 right-6 text-text-muted hover:text-white transition-colors p-1 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+              
+              <h3 className="text-xl sm:text-2xl font-display font-black italic uppercase tracking-tighter mb-6 text-white">
+                Team Toevoegen
+              </h3>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs uppercase text-text-muted font-bold tracking-wider mb-2">Team Naam</label>
+                  <input 
+                    type="text" 
+                    placeholder="bijv. Heren 1, Junioren U16"
+                    value={newTeamName}
+                    onChange={(e) => setNewTeamName(e.target.value)}
+                    className="w-full bg-dark border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-primary transition-colors text-white text-sm"
+                  />
+                </div>
+                
+                <button
+                  onClick={() => {
+                    if (!newTeamName.trim()) return;
+                    createTeam(newTeamName.trim());
+                    setShowAddTeamModal(false);
+                    setNewTeamName('');
+                  }}
+                  disabled={!newTeamName.trim()}
+                  className="w-full bg-primary hover:bg-primary/95 font-display font-black uppercase italic tracking-widest py-3 sm:py-4 rounded-xl text-white disabled:opacity-30 disabled:cursor-not-allowed text-xs sm:text-sm active:scale-95 transition-all shadow-lg cursor-pointer animate-pulse"
+                >
+                  Team Opslaan
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderDashboard = () => (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row gap-4 sm:justify-between sm:items-center bg-surface p-4 sm:p-6 rounded-2xl shadow-xl border border-white/5">
@@ -1304,7 +1818,7 @@ export default function App() {
       )}
  
        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-         {players.map(player => {
+         {filteredPlayers.map(player => {
            const liveTime = player.isRunning && player.lastStartTime 
              ? player.totalTime + (Date.now() - player.lastStartTime) 
              : player.totalTime;
@@ -1535,52 +2049,65 @@ export default function App() {
       </div>
 
       <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        {players.map(player => (
-          <div key={player.id} className="bg-surface p-3 sm:p-4 rounded-2xl border border-white/5 shadow-lg flex items-center justify-between gap-2 group min-w-0">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary text-white flex items-center justify-center font-black italic text-base sm:text-lg shadow-inner flex-shrink-0">
-                #{player.number}
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className={`font-bold transition-all break-words leading-tight ${
-                  (player.name || '').length > 20 
-                    ? 'text-xs sm:text-sm' 
-                    : (player.name || '').length > 12 
-                      ? 'text-sm sm:text-base' 
-                      : 'text-base sm:text-lg'
-                }`} title={player.name || ''}>
-                  {player.name || 'Speler'}
-                </h3>
-                <p className="text-[10px] text-text-muted uppercase font-bold">{player.position}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-              <button 
-                onClick={() => {
-                  setEditingPlayer(player);
-                  setNewPlayerName(player.name);
-                  setNewPlayerNumber(player.number);
-                  setNewPlayerPosition(player.position as string);
-                  setShowEditPlayerModal(true);
-                }}
-                className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors active:scale-90"
-              >
-                <Pencil size={18} />
-              </button>
-              <button 
-                onClick={() => removePlayer(player.id)}
-                className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors active:scale-90"
-              >
-                <Trash2 size={18} />
-              </button>
-            </div>
-          </div>
-        ))}
-        {players.length === 0 && (
-          <div className="col-span-full py-12 text-center text-text-muted bg-surface/30 rounded-3xl border border-dashed border-white/10">
+        {filteredPlayers.length === 0 ? (
+          <div className="col-span-full py-16 text-center text-text-muted bg-surface/30 rounded-3xl border border-dashed border-white/10 w-full px-4">
             <Users className="mx-auto mb-4 opacity-10" size={48} />
-            <p className="text-sm">Geen spelers in je team...</p>
+            <p className="text-sm font-bold text-white uppercase tracking-wider mb-1">Geen spelers gevonden</p>
+            <p className="text-xs text-text-muted max-w-sm mx-auto leading-relaxed">
+              {activeTeamId === 'all' 
+                ? 'Er zijn nog geen spelers in de database. Klik hierboven op "+ Speler" om je eerste speler te registreren!' 
+                : 'Dit team heeft nog geen gekoppelde spelers. Gebruik het "Teams" tabblad om spelers te koppelen of voeg hier een nieuwe toe.'}
+            </p>
+            <button 
+              onClick={() => setShowAddPlayerModal(true)}
+              className="mt-5 bg-primary/25 border border-primary/20 text-primary hover:bg-primary/40 font-display font-medium text-xs uppercase italic tracking-widest py-2.5 px-6 rounded-lg transition-all active:scale-95 shadow"
+            >
+              Nieuwe Speler Toevoegen
+            </button>
           </div>
+        ) : (
+          filteredPlayers.map(player => (
+            <div key={player.id} className="bg-surface p-3 sm:p-4 rounded-2xl border border-white/5 shadow-lg flex items-center justify-between gap-2 group min-w-0">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary text-white flex items-center justify-center font-black italic text-base sm:text-lg shadow-inner flex-shrink-0">
+                  #{player.number}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className={`font-bold transition-all break-words leading-tight ${
+                    (player.name || '').length > 20 
+                      ? 'text-xs sm:text-sm' 
+                      : (player.name || '').length > 12 
+                        ? 'text-sm sm:text-base' 
+                        : 'text-base sm:text-lg'
+                  }`} title={player.name || ''}>
+                    {player.name || 'Speler'}
+                  </h3>
+                  <p className="text-[10px] text-text-muted uppercase font-bold">{player.position}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                <button 
+                  onClick={() => {
+                    setEditingPlayer(player);
+                    setNewPlayerName(player.name);
+                    setNewPlayerNumber(player.number);
+                    setNewPlayerPosition(player.position as string);
+                    setShowEditPlayerModal(true);
+                  }}
+                  className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors active:scale-90"
+                >
+                  <Pencil size={18} />
+                </button>
+                <button 
+                  onClick={() => removePlayer(player.id)}
+                  className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors active:scale-90"
+                  title={activeTeamId === 'all' ? "Speler verwijderen" : "Speler loskoppelen van team"}
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            </div>
+          ))
         )}
       </div>
     </div>
@@ -1709,11 +2236,23 @@ export default function App() {
   const [newPlayerNumber, setNewPlayerNumber] = useState('');
   const [newPlayerPosition, setNewPlayerPosition] = useState('Guard');
 
-  const updatePlayer = (id: string, name: string, number: string, position: string) => {
-    setPlayers(prev => prev.map(p => {
-      if (p.id !== id) return p;
-      return { ...p, name, number, position };
-    }));
+  const updatePlayer = async (id: string, name: string, number: string, position: string) => {
+    if (!currentUser) return;
+    try {
+      const playerDocRef = doc(db, 'players', id);
+      await setDoc(playerDocRef, {
+        name,
+        number,
+        position
+      }, { merge: true });
+
+      setPlayers(prev => prev.map(p => {
+        if (p.id !== id) return p;
+        return { ...p, name, number, position };
+      }));
+    } catch (err) {
+      console.error("Fout bij bijwerken van speler in Firestore:", err);
+    }
   };
 
   if (loadingAuth) {
@@ -1747,6 +2286,7 @@ export default function App() {
         <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
           <div className="hidden md:flex bg-surface rounded-2xl p-1 border border-white/5 backdrop-blur-sm self-center">
             <TabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Timer size={18} />} label="Match" />
+            <TabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={18} />} label="Teams" />
             <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={18} />} label="Historie" />
             <TabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={18} />} label="Seizoen" />
             <TabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={18} />} label="Spelers" />
@@ -1777,8 +2317,49 @@ export default function App() {
         </div>
       </header>
 
+      {/* Active Team Filter Bar */}
+      {teams.length > 0 && activeTab !== 'teams' && activeTab !== 'account' && (
+        <div className="mb-6 bg-surface/30 p-2 rounded-2xl border border-white/5 flex flex-wrap items-center justify-between gap-3 backdrop-blur-sm">
+          <div className="flex items-center gap-2 pl-2">
+            <Shield className="text-primary" size={16} />
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-text-muted">Actief Team:</span>
+          </div>
+          <div className="flex items-center gap-1.5 overflow-x-auto max-w-full">
+            <button
+              onClick={() => setActiveTeamId('all')}
+              className={`px-3.5 py-1.5 rounded-xl font-display font-medium text-xs uppercase italic tracking-wider transition-all active:scale-95 ${
+                activeTeamId === 'all'
+                  ? 'bg-primary text-white font-black shadow-lg shadow-primary/20'
+                  : 'bg-white/5 hover:bg-white/10 text-text-muted hover:text-white'
+              }`}
+            >
+              Alle Spelers
+            </button>
+            {teams.map(team => (
+              <button
+                key={team.id}
+                onClick={() => setActiveTeamId(team.id)}
+                className={`px-3.5 py-1.5 rounded-xl font-display font-medium text-xs uppercase italic tracking-wider transition-all active:scale-95 flex items-center gap-1.5 ${
+                  activeTeamId === team.id
+                    ? 'bg-primary text-white font-black shadow-lg shadow-primary/20'
+                    : 'bg-white/5 hover:bg-white/10 text-text-muted hover:text-white'
+                }`}
+              >
+                <span>{team.name}</span>
+                <span className={`text-[9px] font-bold font-mono rounded-full px-1.5 py-0.2 ${
+                  activeTeamId === team.id ? 'bg-white text-primary' : 'bg-white/10 text-text-muted'
+                }`}>
+                  {teamPlayers.filter(tp => tp.teamId === team.id).length}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <main className="py-4">
         {activeTab === 'dashboard' && renderDashboard()}
+        {activeTab === 'teams' && renderTeams()}
         {activeTab === 'history' && renderHistory()}
         {activeTab === 'season' && renderSeason()}
         {activeTab === 'players' && renderPlayers()}
@@ -1801,6 +2382,7 @@ export default function App() {
       {/* Mobile Nav */}
       <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-surface py-3 px-2 flex justify-around items-center z-[100] border-t border-white/5 shadow-[0_-10px_40px_rgba(0,0,0,0.4)]">
         <MobileTabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Activity size={20} />} label="Live" />
+        <MobileTabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={20} />} label="Teams" />
         <MobileTabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={20} />} label="Historie" />
         <MobileTabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={20} />} label="Stats" />
         <MobileTabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={20} />} label="Team" />
@@ -1839,11 +2421,11 @@ export default function App() {
                   />
                 </div>
 
-                {players.length < 5 ? (
+                {filteredPlayers.length < 5 ? (
                   <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-center space-y-2">
                     <p className="text-red-400 text-xs font-bold uppercase tracking-wider">Te weinig spelers</p>
                     <p className="text-text-muted text-xs">
-                      Je hebt minimaal 5 spelers nodig om een wedstrijd te kunnen starten. Voeg eerst spelers toe in de Spelers-lijst.
+                      Je hebt minimaal 5 spelers nodig om een wedstrijd te kunnen starten. Voeg eerst spelers toe aan {activeTeamId === 'all' ? 'de spelerslijst' : 'dit team'}.
                     </p>
                   </div>
                 ) : (
@@ -1855,7 +2437,7 @@ export default function App() {
                       </span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar bg-dark/40 p-2 rounded-xl border border-white/5">
-                      {players.map(p => {
+                      {filteredPlayers.map(p => {
                         const isSelected = selectedStarters.includes(p.id);
                         return (
                           <button

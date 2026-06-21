@@ -24,6 +24,50 @@
           }
         }
       }
+    },
+    "teams": {
+      "description": "Collection of basketball teams created by coaches",
+      "documents": {
+        "{teamId}": {
+          "schema": {
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "userId": { "type": "string" },
+            "createdAt": { "type": "number" }
+          }
+        }
+      }
+    },
+    "players": {
+      "description": "Collection of global basketball players",
+      "documents": {
+        "{playerId}": {
+          "schema": {
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "number": { "type": "string" },
+            "position": { "type": "string" },
+            "userId": { "type": "string" },
+            "createdAt": { "type": "number" },
+            "totalTime": { "type": "number" },
+            "isRunning": { "type": "boolean" },
+            "stats": { "type": "map" }
+          }
+        }
+      }
+    },
+    "teamPlayers": {
+      "description": "Collection of mappings between teams and players",
+      "documents": {
+        "{mappingId}": {
+          "schema": {
+            "teamId": { "type": "string" },
+            "playerId": { "type": "string" },
+            "createdAt": { "type": "number" },
+            "role": { "type": "string" }
+          }
+        }
+      }
     }
   }
 }

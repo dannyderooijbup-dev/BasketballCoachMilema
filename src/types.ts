@@ -52,6 +52,23 @@ export interface MatchHistoryEntry {
   players: Player[];
   totalMatchTime: number;
   starting5?: string[];
+  teamId?: string;
 }
 
-export type Tab = 'dashboard' | 'history' | 'players' | 'season' | 'account';
+export type Tab = 'dashboard' | 'history' | 'players' | 'season' | 'account' | 'teams';
+
+export interface Team {
+  id: string;
+  name: string;
+  userId: string;
+  createdAt: number;
+}
+
+export interface TeamPlayer {
+  id: string;
+  teamId: string;
+  playerId: string;
+  createdAt: number;
+  role?: string;
+}
+

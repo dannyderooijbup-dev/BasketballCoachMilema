@@ -1,8 +1,58 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Helper functions for security checks
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getTeam(teamId) {
+      return get(/databases/$(database)/documents/teams/$(teamId)).data;
+    }
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Users Collection (existing structure)
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isOwner(userId);
+    }
+
+    // Teams Collection
+    match /teams/{teamId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() 
+        && request.resource.data.userId == request.auth.uid
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.profiel.teamCount < 3;
+      allow update: if isSignedIn() 
+        && resource.data.userId == request.auth.uid 
+        && request.resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Players Collection (globalStats)
+    match /players/{playerId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // TeamPlayers (many-to-many relationship)
+    match /teamPlayers/{docId} {
+      allow read: if isSignedIn() && getTeam(resource.data.teamId).userId == request.auth.uid;
+      allow create: if isSignedIn() && getTeam(request.resource.data.teamId).userId == request.auth.uid;
+      allow update: if isSignedIn() 
+        && getTeam(resource.data.teamId).userId == request.auth.uid 
+        && getTeam(request.resource.data.teamId).userId == request.auth.uid;
+      allow delete: if isSignedIn() && getTeam(resource.data.teamId).userId == request.auth.uid;
     }
   }
 }

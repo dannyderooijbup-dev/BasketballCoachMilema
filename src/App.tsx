@@ -21,7 +21,8 @@ import {
   Download,
   RotateCcw,
   Pencil,
-  LogOut
+  LogOut,
+  User as UserIcon
 } from 'lucide-react';
 import { Player, MatchHistoryEntry, Tab, Position, Session } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
@@ -30,6 +31,7 @@ import { User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import AuthScreen from './components/AuthScreen';
+import AccountScreen from './components/AccountScreen';
 import { db } from './firebase';
 
 const generateId = () => {
@@ -43,6 +45,11 @@ export default function App() {
   const { currentUser, loading: loadingAuth, logout } = useAuth();
   const [loadingSync, setLoadingSync] = useState(false);
   const hasSyncedFromFirestore = useRef(false);
+
+  const [profileName, setProfileName] = useState('');
+  const [profileClub, setProfileClub] = useState('');
+  const [profileRole, setProfileRole] = useState('');
+  const [profileNewsletter, setProfileNewsletter] = useState(false);
 
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [players, setPlayers] = useState<Player[]>([]);
@@ -415,6 +422,26 @@ export default function App() {
       console.error(e);
     }
 
+    try {
+      const savedProfileName = localStorage.getItem('profileName');
+      if (savedProfileName) setProfileName(savedProfileName);
+    } catch (e) { console.error(e); }
+
+    try {
+      const savedProfileClub = localStorage.getItem('profileClub');
+      if (savedProfileClub) setProfileClub(savedProfileClub);
+    } catch (e) { console.error(e); }
+
+    try {
+      const savedProfileRole = localStorage.getItem('profileRole');
+      if (savedProfileRole) setProfileRole(savedProfileRole);
+    } catch (e) { console.error(e); }
+
+    try {
+      const savedProfileNewsletter = localStorage.getItem('profileNewsletter');
+      if (savedProfileNewsletter) setProfileNewsletter(JSON.parse(savedProfileNewsletter) === true);
+    } catch (e) { console.error(e); }
+
     initialLoadDone.current = true;
   }, []);
 
@@ -444,6 +471,25 @@ export default function App() {
             localStorage.setItem('matchesHistory', JSON.stringify(data.wedstrijden));
           }
           
+          if (data.profiel) {
+            if (data.profiel.naam !== undefined) {
+              setProfileName(data.profiel.naam);
+              localStorage.setItem('profileName', data.profiel.naam);
+            }
+            if (data.profiel.club !== undefined) {
+              setProfileClub(data.profiel.club);
+              localStorage.setItem('profileClub', data.profiel.club);
+            }
+            if (data.profiel.functie !== undefined) {
+              setProfileRole(data.profiel.functie);
+              localStorage.setItem('profileRole', data.profiel.functie);
+            }
+            if (data.profiel.nieuwsbrief !== undefined) {
+              setProfileNewsletter(data.profiel.nieuwsbrief);
+              localStorage.setItem('profileNewsletter', JSON.stringify(data.profiel.nieuwsbrief));
+            }
+          }
+
           if (data.instellingen) {
             const inst = data.instellingen;
             if (inst.isMatchActive !== undefined) {
@@ -485,6 +531,10 @@ export default function App() {
           const initialDocData = {
             profiel: {
               email: currentUser.email,
+              naam: profileName,
+              club: profileClub,
+              functie: profileRole,
+              nieuwsbrief: profileNewsletter,
               lastLogin: Date.now(),
               migratedAt: Date.now()
             },
@@ -541,12 +591,20 @@ export default function App() {
     localStorage.setItem('matchClockStartTime', JSON.stringify(matchClockStartTime));
     localStorage.setItem('globalActionsLog', JSON.stringify(globalActionsLog));
     localStorage.setItem('currentStarting5', JSON.stringify(currentStarting5));
+    localStorage.setItem('profileName', profileName);
+    localStorage.setItem('profileClub', profileClub);
+    localStorage.setItem('profileRole', profileRole);
+    localStorage.setItem('profileNewsletter', JSON.stringify(profileNewsletter));
 
     // Save to Firestore
     const userDocRef = doc(db, 'users', currentUser.uid);
     setDoc(userDocRef, {
       profiel: {
         email: currentUser.email,
+        naam: profileName,
+        club: profileClub,
+        functie: profileRole,
+        nieuwsbrief: profileNewsletter,
         lastUpdated: Date.now()
       },
       spelers: players,
@@ -564,7 +622,7 @@ export default function App() {
     }, { merge: true }).catch(err => {
       console.error("Fout bij opslaan naar Firestore:", err);
     });
-  }, [players, history, isMatchActive, opponent, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5, currentUser]);
+  }, [players, history, isMatchActive, opponent, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5, currentUser, profileName, profileClub, profileRole, profileNewsletter]);
 
   const handleLogout = async () => {
     try {
@@ -579,6 +637,10 @@ export default function App() {
       setMatchClockStartTime(null);
       setGlobalActionsLog([]);
       setCurrentStarting5([]);
+      setProfileName('');
+      setProfileClub('');
+      setProfileRole('');
+      setProfileNewsletter(false);
       
       // Clear localStorage
       localStorage.removeItem('players');
@@ -591,6 +653,10 @@ export default function App() {
       localStorage.removeItem('matchClockStartTime');
       localStorage.removeItem('globalActionsLog');
       localStorage.removeItem('currentStarting5');
+      localStorage.removeItem('profileName');
+      localStorage.removeItem('profileClub');
+      localStorage.removeItem('profileRole');
+      localStorage.removeItem('profileNewsletter');
 
       // Reset sync variables
       hasSyncedFromFirestore.current = false;
@@ -1684,15 +1750,22 @@ export default function App() {
             <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={18} />} label="Historie" />
             <TabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={18} />} label="Seizoen" />
             <TabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={18} />} label="Spelers" />
+            <TabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={18} />} label="Account" />
           </div>
 
-          <div className="bg-surface/50 border border-white/5 rounded-2xl px-3 py-1.5 flex items-center justify-between sm:justify-end gap-3 backdrop-blur-sm w-full sm:w-auto text-xs">
+          <div 
+            onClick={() => setActiveTab('account')}
+            className={`bg-surface/50 border border-white/5 rounded-2xl px-3 py-1.5 flex items-center justify-between sm:justify-end gap-3 backdrop-blur-sm w-full sm:w-auto text-xs cursor-pointer hover:bg-surface/80 hover:border-white/10 transition-colors ${activeTab === 'account' ? 'ring-1 ring-primary/40 bg-surface/80' : ''}`}
+          >
             <div className="flex flex-col text-left sm:text-right">
               <span className="text-[9px] sm:text-[10px] text-text-muted uppercase font-bold tracking-wider">Coach</span>
-              <span className="text-white font-mono font-medium max-w-[140px] sm:max-w-[170px] truncate">{currentUser?.email}</span>
+              <span className="text-white font-mono font-medium max-w-[140px] sm:max-w-[170px] truncate">{profileName || currentUser?.email}</span>
             </div>
             <button
-              onClick={handleLogout}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleLogout();
+              }}
               className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-2 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-1.5 border border-red-500/10 text-[10px] sm:text-xs font-bold uppercase tracking-wider cursor-pointer"
               title="Log uit"
               id="header-logout-btn"
@@ -1709,6 +1782,20 @@ export default function App() {
         {activeTab === 'history' && renderHistory()}
         {activeTab === 'season' && renderSeason()}
         {activeTab === 'players' && renderPlayers()}
+        {activeTab === 'account' && (
+          <AccountScreen
+            currentUser={currentUser}
+            name={profileName}
+            setName={setProfileName}
+            club={profileClub}
+            setClub={setProfileClub}
+            role={profileRole}
+            setRole={setProfileRole}
+            newsletter={profileNewsletter}
+            setNewsletter={setProfileNewsletter}
+            onLogout={handleLogout}
+          />
+        )}
       </main>
 
       {/* Mobile Nav */}
@@ -1717,6 +1804,7 @@ export default function App() {
         <MobileTabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={20} />} label="Historie" />
         <MobileTabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={20} />} label="Stats" />
         <MobileTabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={20} />} label="Team" />
+        <MobileTabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={20} />} label="Account" />
       </nav>
 
       {/* Footer */}

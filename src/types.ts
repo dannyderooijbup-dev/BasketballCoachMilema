@@ -54,4 +54,4 @@ export interface MatchHistoryEntry {
   starting5?: string[];
 }
 
-export type Tab = 'dashboard' | 'history' | 'players' | 'season';
+export type Tab = 'dashboard' | 'history' | 'players' | 'season' | 'account';

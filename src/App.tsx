@@ -20,11 +20,15 @@ import {
   BarChart3,
   Download,
   RotateCcw,
-  Pencil
+  Pencil,
+  LogOut
 } from 'lucide-react';
 import { Player, MatchHistoryEntry, Tab, Position, Session } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
 import { exportMatchToPDF, exportSeasonStatsToPDF } from './pdfUtils';
+import { User } from 'firebase/auth';
+import { useAuth } from './AuthContext';
+import AuthScreen from './components/AuthScreen';
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -34,6 +38,8 @@ const generateId = () => {
 };
 
 export default function App() {
+  const { currentUser, loading: loadingAuth, logout } = useAuth();
+
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [players, setPlayers] = useState<Player[]>([]);
   const [history, setHistory] = useState<MatchHistoryEntry[]>([]);
@@ -1471,17 +1477,48 @@ export default function App() {
     }));
   };
 
+  if (loadingAuth) {
+    return (
+      <div className="min-h-screen bg-dark flex flex-col items-center justify-center p-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+        <p className="text-text-muted font-mono uppercase tracking-widest text-[10px] sm:text-xs">Laden...</p>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <AuthScreen />;
+  }
+
   return (
     <div className="min-h-screen pb-24 md:pb-0 md:pt-6 max-w-5xl mx-auto px-4 md:px-6">
       <header className="py-4 sm:py-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex flex-col items-center md:items-start text-center md:text-left">
           <Logo />
         </div>
-        <div className="hidden md:flex bg-surface rounded-2xl p-1 border border-white/5 backdrop-blur-sm self-center">
-          <TabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Timer size={18} />} label="Match" />
-          <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={18} />} label="Historie" />
-          <TabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={18} />} label="Seizoen" />
-          <TabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={18} />} label="Spelers" />
+        <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
+          <div className="hidden md:flex bg-surface rounded-2xl p-1 border border-white/5 backdrop-blur-sm self-center">
+            <TabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Timer size={18} />} label="Match" />
+            <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={18} />} label="Historie" />
+            <TabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={18} />} label="Seizoen" />
+            <TabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={18} />} label="Spelers" />
+          </div>
+
+          <div className="bg-surface/50 border border-white/5 rounded-2xl px-3 py-1.5 flex items-center justify-between sm:justify-end gap-3 backdrop-blur-sm w-full sm:w-auto text-xs">
+            <div className="flex flex-col text-left sm:text-right">
+              <span className="text-[9px] sm:text-[10px] text-text-muted uppercase font-bold tracking-wider">Coach</span>
+              <span className="text-white font-mono font-medium max-w-[140px] sm:max-w-[170px] truncate">{currentUser?.email}</span>
+            </div>
+            <button
+              onClick={logout}
+              className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-2 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-1.5 border border-red-500/10 text-[10px] sm:text-xs font-bold uppercase tracking-wider cursor-pointer"
+              title="Log uit"
+              id="header-logout-btn"
+            >
+              <LogOut size={14} />
+              <span>Log uit</span>
+            </button>
+          </div>
         </div>
       </header>
 

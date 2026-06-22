@@ -2479,39 +2479,44 @@ export default function App() {
 
   return (
     <div className="min-h-screen pb-24 md:pb-0 md:pt-6 max-w-5xl mx-auto px-4 md:px-6">
-      <header className="py-4 sm:py-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="flex flex-col items-center md:items-start text-center md:text-left">
+      <header className="py-4 md:py-6 flex flex-row items-center justify-between gap-4 border-b border-white/5 mb-6">
+        <div className="flex-shrink-0">
           <Logo />
         </div>
-        <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
-          <div className="hidden md:flex bg-surface rounded-2xl p-1 border border-white/5 backdrop-blur-sm self-center">
-            <TabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Timer size={18} />} label="Match" />
-            <TabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={18} />} label="Teams" />
-            <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={18} />} label="Historie" />
-            <TabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={18} />} label="Seizoen" />
-            <TabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={18} />} label="Spelers" />
-            <TabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={18} />} label="Account" />
-          </div>
+        
+        <div className="hidden md:flex bg-surface rounded-2xl p-1 border border-white/5 backdrop-blur-sm self-center shadow-lg">
+          <TabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Timer size={18} />} label="Match" />
+          <TabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={18} />} label="Teams" />
+          <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={18} />} label="Historie" />
+          <TabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={18} />} label="Seizoen" />
+          <TabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={18} />} label="Spelers" />
+          <TabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={18} />} label="Account" />
+        </div>
 
+        <div className="flex items-center gap-2.5">
           <div 
             onClick={() => setActiveTab('account')}
-            className={`bg-surface/50 border border-white/5 rounded-2xl px-3 py-1.5 flex items-center justify-between sm:justify-end gap-3 backdrop-blur-sm w-full sm:w-auto text-xs cursor-pointer hover:bg-surface/80 hover:border-white/10 transition-colors ${activeTab === 'account' ? 'ring-1 ring-primary/40 bg-surface/80' : ''}`}
+            className={`bg-surface/50 border border-white/5 rounded-2xl px-3 py-1.5 flex items-center gap-2.5 backdrop-blur-sm text-xs cursor-pointer hover:bg-surface/80 hover:border-white/10 transition-colors select-none ${activeTab === 'account' ? 'ring-1 ring-primary/40 bg-surface/80' : ''}`}
           >
-            <div className="flex flex-col text-left sm:text-right">
-              <span className="text-[9px] sm:text-[10px] text-text-muted uppercase font-bold tracking-wider">Coach</span>
-              <span className="text-white font-mono font-medium max-w-[140px] sm:max-w-[170px] truncate">{profileName || currentUser?.email}</span>
+            <div className="hidden sm:flex flex-col text-left">
+              <span className="text-[9px] text-text-muted uppercase font-black tracking-wider leading-none mb-0.5">Coach</span>
+              <span className="text-white font-mono font-bold max-w-[100px] sm:max-w-[130px] truncate leading-none">{profileName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Coach')}</span>
             </div>
+            
+            <div className="w-7 h-7 rounded-lg bg-primary/20 text-primary flex items-center justify-center font-black text-xs border border-primary/25">
+              {(profileName || currentUser?.email || 'C')[0].toUpperCase()}
+            </div>
+
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 handleLogout();
               }}
-              className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-2 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-1.5 border border-red-500/10 text-[10px] sm:text-xs font-bold uppercase tracking-wider cursor-pointer"
+              className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-1.5 rounded-lg transition-all active:scale-95 flex items-center justify-center border border-red-500/10 cursor-pointer"
               title="Log uit"
               id="header-logout-btn"
             >
-              <LogOut size={14} />
-              <span>Log uit</span>
+              <LogOut size={13} />
             </button>
           </div>
         </div>
@@ -3057,19 +3062,18 @@ function HistoryStat({ label, value }: { label: string, value: number | string }
 
 function Logo() {
   return (
-    <div className="flex flex-col items-center md:items-start select-none">
+    <div className="flex flex-col items-start select-none">
       <div className="flex items-baseline gap-1">
-        <h1 className="text-xl sm:text-2xl font-black font-display italic uppercase tracking-tighter leading-none">
+        <h1 className="text-lg sm:text-2xl font-black font-display italic uppercase tracking-tighter leading-none">
           <span className="text-white">Basketball</span>
           <span className="text-primary ml-1">Coach</span>
         </h1>
       </div>
-      <div className="mt-1.5 flex items-center gap-1.5">
-        <div className="h-[1px] w-4 bg-primary/30 rounded-full block md:hidden"></div>
-        <span className="text-[10px] sm:text-[12px] font-black text-text-muted uppercase tracking-[0.3em] font-sans">
-          Game <span className="text-primary">Stats</span>
+      <div className="mt-1 flex items-center gap-1.5">
+        <span className="text-[9px] sm:text-[11px] font-black text-text-muted uppercase tracking-[0.25em] font-sans">
+          Game <span className="text-primary font-bold">Stats</span>
         </span>
-        <div className="h-[1px] w-4 bg-primary/30 rounded-full"></div>
+        <div className="h-[1px] w-3 bg-primary/30 rounded-full"></div>
       </div>
     </div>
   );

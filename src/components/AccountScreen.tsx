@@ -28,28 +28,47 @@ import { motion, AnimatePresence } from 'motion/react';
 interface AccountScreenProps {
   currentUser: User;
   name: string;
-  setName: (name: string) => void;
   club: string;
-  setClub: (club: string) => void;
   role: string;
-  setRole: (role: string) => void;
   newsletter: boolean;
-  setNewsletter: (val: boolean) => void;
+  onSaveProfile: (profile: { name: string; club: string; role: string; newsletter: boolean }) => Promise<void>;
   onLogout: () => Promise<void>;
 }
 
 export default function AccountScreen({
   currentUser,
   name,
-  setName,
   club,
-  setClub,
   role,
-  setRole,
   newsletter,
-  setNewsletter,
+  onSaveProfile,
   onLogout
 }: AccountScreenProps) {
+  // Local state for draft profile settings
+  const [localName, setLocalName] = useState(name);
+  const [localClub, setLocalClub] = useState(club);
+  const [localRole, setLocalRole] = useState(role);
+  const [localNewsletter, setLocalNewsletter] = useState(newsletter);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileSavedMessage, setProfileSavedMessage] = useState<string | null>(null);
+
+  // Sync state if props change (e.g. on load)
+  React.useEffect(() => {
+    setLocalName(name);
+  }, [name]);
+
+  React.useEffect(() => {
+    setLocalClub(club);
+  }, [club]);
+
+  React.useEffect(() => {
+    setLocalRole(role);
+  }, [role]);
+
+  React.useEffect(() => {
+    setLocalNewsletter(newsletter);
+  }, [newsletter]);
+
   // Local state for interactive actions
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -68,6 +87,26 @@ export default function AccountScreen({
   const isGoogleLinked = currentUser.providerData.some(
     (provider) => provider.providerId === 'google.com'
   );
+
+  const handleSaveProfile = async () => {
+    setProfileSaving(true);
+    setProfileSavedMessage(null);
+    try {
+      await onSaveProfile({
+        name: localName.trim(),
+        club: localClub.trim(),
+        role: localRole.trim(),
+        newsletter: localNewsletter
+      });
+      setProfileSavedMessage('Profielgegevens succesvol opgeslagen!');
+      setTimeout(() => setProfileSavedMessage(null), 4000);
+    } catch (err: any) {
+      console.error(err);
+      setMsg({ type: 'error', text: 'Opslaan mislukt. Probeer het opnieuw.' });
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,14 +148,20 @@ export default function AccountScreen({
       await linkWithPopup(currentUser, googleProvider);
       setMsg({ type: 'success', text: 'Google account succesvol gekoppeld!' });
     } catch (err: any) {
-      console.error(err);
+      console.error("Fout bij koppelen met Google:", err);
+      let errorMessage = 'Koppelen mislukt. Probeer het opnieuw.';
+      
       if (err.code === 'auth/credential-already-in-use') {
-        setMsg({ type: 'error', text: 'Dit Google account is al gekoppeld aan een ander basketball coach account.' });
+        errorMessage = 'Dit Google account is al gekoppeld aan een ander basketball coach account.';
       } else if (err.code === 'auth/popup-blocked') {
-        setMsg({ type: 'error', text: 'Inlog popup geblokkeerd. Sta popups toe voor deze site.' });
-      } else {
-        setMsg({ type: 'error', text: 'Koppelen mislukt. Probeer het opnieuw.' });
+        errorMessage = 'Inlog popup geblokkeerd door je browser. Sta popups toe of open de app in een nieuw tabblad.';
+      } else if (err.code === 'auth/operation-not-allowed') {
+        errorMessage = 'Google inloggen/koppelen is niet ingeschakeld in de Firebase Console. Schakel de Google provider in onder Authentication > Sign-in method.';
+      } else if (err.message) {
+        errorMessage = `Koppelen mislukt: ${err.message} (Code: ${err.code || 'onbekend'})`;
       }
+      
+      setMsg({ type: 'error', text: errorMessage });
     } finally {
       setLinkLoading(false);
     }
@@ -208,8 +253,8 @@ export default function AccountScreen({
               </label>
               <input
                 type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                value={localName}
+                onChange={(e) => setLocalName(e.target.value)}
                 placeholder="Bijv. Coach Jeremy"
                 className="w-full bg-dark/60 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/45 transition-all"
               />
@@ -222,8 +267,8 @@ export default function AccountScreen({
               </label>
               <input
                 type="text"
-                value={club}
-                onChange={(e) => setClub(e.target.value)}
+                value={localClub}
+                onChange={(e) => setLocalClub(e.target.value)}
                 placeholder="Bijv. BC Triple Threat"
                 className="w-full bg-dark/60 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/45 transition-all"
               />
@@ -236,21 +281,21 @@ export default function AccountScreen({
               </label>
               <input
                 type="text"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
+                value={localRole}
+                onChange={(e) => setLocalRole(e.target.value)}
                 placeholder="Bijv. Hoofdcoach Heren 1 of Jeugdcoach"
                 className="w-full bg-dark/60 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/45 transition-all"
               />
             </div>
 
             {/* Newsletter toggle */}
-            <div className="pt-4 border-t border-white/5">
+            <div className="pt-4 border-t border-white/5 pb-2">
               <label className="flex items-center gap-3 cursor-pointer group">
                 <div className="relative">
                   <input
                     type="checkbox"
-                    checked={newsletter}
-                    onChange={(e) => setNewsletter(e.target.checked)}
+                    checked={localNewsletter}
+                    onChange={(e) => setLocalNewsletter(e.target.checked)}
                     className="sr-only peer"
                   />
                   <div className="w-10 h-6 bg-dark peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary border border-white/10"></div>
@@ -262,6 +307,34 @@ export default function AccountScreen({
                   <span className="text-[10px] text-text-muted">Blijf op de hoogte van tactieken en tips.</span>
                 </div>
               </label>
+            </div>
+
+            {/* Save Button for Coach Profile */}
+            <div className="pt-4 border-t border-white/5 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleSaveProfile}
+                disabled={profileSaving}
+                className="w-full bg-primary hover:bg-primary/95 text-white font-display font-black uppercase italic tracking-widest py-3 px-4 rounded-xl text-xs sm:text-sm active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {profileSaving ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                    <span>Bezig met opslaan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={16} />
+                    <span>Gegevens Opslaan</span>
+                  </>
+                )}
+              </button>
+              {profileSavedMessage && (
+                <p className="text-[11px] text-green-400 font-medium text-center flex items-center justify-center gap-1.5 animate-pulse mt-1">
+                  <Check size={12} fill="currentColor" className="text-green-400 bg-transparent" />
+                  {profileSavedMessage}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -375,6 +448,12 @@ export default function AccountScreen({
                   </button>
                 )}
               </div>
+
+              {typeof window !== 'undefined' && window.self !== window.top && !isGoogleLinked && (
+                <div className="p-3 bg-primary/5 rounded-xl border border-primary/10 text-[10px] text-primary/80 leading-relaxed text-left">
+                  <strong>Let op preview restrictie:</strong> De browser kan de Google popup of accountkoppeling blokkeren binnen dit iframe. Klik rechtsboven in AI Studio op <strong>"Open in a new tab"</strong> om de app rechtstreeks te openen en succesvol te koppelen.
+                </div>
+              )}
 
               {/* Logout Button */}
               <button

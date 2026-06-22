@@ -71,6 +71,8 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
         return 'Het inlogvenster is gesloten voordat het inloggen kon worden afgerond.';
       case 'auth/invalid-credential':
         return 'Ongeldige inloggegevens. Controleer e-mail en wachtwoord.';
+      case 'auth/operation-not-allowed':
+        return 'Google inloggen is niet ingeschakeld in de Firebase Console. Ga naar Authentication > Sign-in method en schakel Google in.';
       default:
         return 'Er is een fout opgetreden bij het inloggen. Probeer het opnieuw.';
     }
@@ -440,6 +442,12 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
               </svg>
               Inloggen met Google
             </button>
+
+            {typeof window !== 'undefined' && window.self !== window.top && (
+              <div className="mt-4 p-3 bg-primary/5 rounded-xl border border-primary/10 text-[10px] text-primary/80 leading-relaxed text-center">
+                <strong>Let op preview iframe:</strong> Google Inloggen kan geblokkeerd worden binnen de AI Studio preview. Klik rechtsboven op <strong>"Open in a new tab"</strong> om foutloos in te loggen via Google.
+              </div>
+            )}
           </>
         )}
 

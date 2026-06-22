@@ -82,11 +82,67 @@ export default function App() {
   };
   const filteredPlayers = getFilteredPlayers();
 
+  const getPlayersOfTeam = (teamId: string) => {
+    if (teamId === 'all') return players;
+    const mappedPlayerIds = teamPlayers
+      .filter(tp => tp.teamId === teamId)
+      .map(tp => tp.playerId);
+    return players.filter(p => mappedPlayerIds.includes(p.id));
+  };
+
+  const isJerseyNumberTakenInTeam = (number: string, teamId: string, excludePlayerId?: string) => {
+    if (teamId === 'all') return false;
+    const teamPlayerIds = teamPlayers
+      .filter(tp => tp.teamId === teamId && tp.playerId !== excludePlayerId)
+      .map(tp => tp.playerId);
+    return players.some(p => p.id !== excludePlayerId && teamPlayerIds.includes(p.id) && p.number.trim() === number.trim());
+  };
+
+  const isJerseyNumberConflictingForPlayer = (newNumber: string, playerId: string) => {
+    const pTeamIds = teamPlayers
+      .filter(tp => tp.playerId === playerId)
+      .map(tp => tp.teamId);
+    if (pTeamIds.length === 0) return false;
+    const teammateIds = teamPlayers
+      .filter(tp => pTeamIds.includes(tp.teamId) && tp.playerId !== playerId)
+      .map(tp => tp.playerId);
+    return players.some(p => teammateIds.includes(p.id) && p.number.trim() === newNumber.trim());
+  };
+
+  const getTeamBgColorClass = (teamId: string) => {
+    if (teamId === 'all') return 'bg-surface border-white/10';
+    const index = teams.findIndex(t => t.id === teamId);
+    if (index === 0) return 'bg-[#1e2e5c] border-blue-500/30';       // Indigo/Blue
+    if (index === 1) return 'bg-[#3b1a40] border-purple-500/30';     // Purple
+    if (index === 2) return 'bg-[#103028] border-emerald-500/30';    // Green
+    return 'bg-surface border-white/10';
+  };
+
+  const getTeamButtonColorClass = (teamId: string) => {
+    if (teamId === 'all') return 'bg-primary text-white font-black shadow-lg shadow-primary/20';
+    const index = teams.findIndex(t => t.id === teamId);
+    if (index === 0) return 'bg-blue-600 text-white font-black shadow-lg shadow-blue-600/20';
+    if (index === 1) return 'bg-purple-600 text-white font-black shadow-lg shadow-purple-600/20';
+    if (index === 2) return 'bg-emerald-600 text-white font-black shadow-lg shadow-emerald-600/20';
+    return 'bg-primary text-white font-black shadow-lg';
+  };
+
+  const getTeamStickyBgColorClass = (teamId: string) => {
+    if (teamId === 'all') return 'bg-surface';
+    const index = teams.findIndex(t => t.id === teamId);
+    if (index === 0) return 'bg-[#1e2e5c]';
+    if (index === 1) return 'bg-[#3b1a40]';
+    if (index === 2) return 'bg-[#103028]';
+    return 'bg-surface';
+  };
+
   useEffect(() => {
     localStorage.setItem('activeTeamId', activeTeamId);
   }, [activeTeamId]);
   const [history, setHistory] = useState<MatchHistoryEntry[]>([]);
   const [isMatchActive, setIsMatchActive] = useState(false);
+  const [matchTeamId, setMatchTeamId] = useState<string | null>(null);
+  const [selectedMatchTeamId, setSelectedMatchTeamId] = useState<string>('');
   const [opponent, setOpponent] = useState('');
   const [showMatchStartModal, setShowMatchStartModal] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<MatchHistoryEntry | null>(null);
@@ -383,6 +439,15 @@ export default function App() {
     }
 
     try {
+      const savedMatchTeamId = localStorage.getItem('matchTeamId');
+      if (savedMatchTeamId && savedMatchTeamId !== 'null' && savedMatchTeamId !== 'undefined') {
+        setMatchTeamId(savedMatchTeamId);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    try {
       const savedOpponent = localStorage.getItem('opponent');
       if (savedOpponent && savedOpponent !== 'null' && savedOpponent !== 'undefined') {
         setOpponent(savedOpponent);
@@ -556,6 +621,10 @@ export default function App() {
               setCurrentStarting5(inst.currentStarting5);
               localStorage.setItem('currentStarting5', JSON.stringify(inst.currentStarting5));
             }
+            if (inst.matchTeamId !== undefined) {
+              setMatchTeamId(inst.matchTeamId);
+              localStorage.setItem('matchTeamId', inst.matchTeamId || '');
+            }
           }
         } else {
           // Document does not exist (first login):
@@ -581,7 +650,8 @@ export default function App() {
               periodElapsed,
               matchClockStartTime,
               globalActionsLog,
-              currentStarting5
+              currentStarting5,
+              matchTeamId
             }
           };
 
@@ -704,6 +774,7 @@ export default function App() {
     localStorage.setItem('players', JSON.stringify(players));
     localStorage.setItem('matchesHistory', JSON.stringify(history));
     localStorage.setItem('isMatchActive', JSON.stringify(isMatchActive));
+    localStorage.setItem('matchTeamId', matchTeamId || '');
     localStorage.setItem('opponent', opponent);
     localStorage.setItem('gameClockRunning', JSON.stringify(gameClockRunning));
     localStorage.setItem('currentPeriod', JSON.stringify(currentPeriod));
@@ -737,12 +808,42 @@ export default function App() {
         periodElapsed,
         matchClockStartTime,
         globalActionsLog,
-        currentStarting5
+        currentStarting5,
+        matchTeamId
       }
     }, { merge: true }).catch(err => {
       console.error("Fout bij opslaan naar Firestore:", err);
     });
-  }, [players, history, isMatchActive, opponent, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5, currentUser, profileName, profileClub, profileRole, profileNewsletter]);
+  }, [players, history, isMatchActive, matchTeamId, opponent, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5, currentUser, profileName, profileClub, profileRole, profileNewsletter]);
+
+  const handleSaveProfile = async (updatedData: { name: string; club: string; role: string; newsletter: boolean }) => {
+    if (!currentUser) return;
+    
+    // Update local React states
+    setProfileName(updatedData.name);
+    setProfileClub(updatedData.club);
+    setProfileRole(updatedData.role);
+    setProfileNewsletter(updatedData.newsletter);
+
+    // Save to localStorage
+    localStorage.setItem('profileName', updatedData.name);
+    localStorage.setItem('profileClub', updatedData.club);
+    localStorage.setItem('profileRole', updatedData.role);
+    localStorage.setItem('profileNewsletter', JSON.stringify(updatedData.newsletter));
+
+    // Save directly to Firestore and return the promise for the UI to wait on
+    const userDocRef = doc(db, 'users', currentUser.uid);
+    await setDoc(userDocRef, {
+      profiel: {
+        email: currentUser.email,
+        naam: updatedData.name,
+        club: updatedData.club,
+        functie: updatedData.role,
+        nieuwsbrief: updatedData.newsletter,
+        lastUpdated: Date.now()
+      }
+    }, { merge: true });
+  };
 
    const handleLogout = async () => {
     try {
@@ -837,6 +938,12 @@ export default function App() {
   const addPlayer = async (name: string, number: string, position: string, teamIdToAssociate?: string) => {
     if (!currentUser) return;
     
+    const targetTeamId = teamIdToAssociate || (activeTeamId !== 'all' ? activeTeamId : null);
+    if (targetTeamId && isJerseyNumberTakenInTeam(number, targetTeamId)) {
+      alert(`Kan speler niet aanmaken: rugnummer #${number} is al in gebruik binnen dit team!`);
+      return;
+    }
+
     const newPlayerId = generateId();
     const newPlayer: Player = {
       id: newPlayerId,
@@ -862,8 +969,6 @@ export default function App() {
         createdAt: Date.now()
       });
 
-      // Target team association: either passed teamId, or activeTeamId (if not 'all')
-      const targetTeamId = teamIdToAssociate || (activeTeamId !== 'all' ? activeTeamId : null);
       let newMapping: TeamPlayer | null = null;
 
       if (targetTeamId) {
@@ -1220,8 +1325,23 @@ export default function App() {
   const seasonStats = useCallback(() => {
     const stats: Record<string, any> = {};
     
-    history.forEach(match => {
+    // Filter history matches if a specific team is active
+    const filteredMatches = activeTeamId === 'all' 
+      ? history 
+      : history.filter(m => m.teamId === activeTeamId);
+
+    // Get the playerIds belonging to this active team (if not 'all')
+    const activeTeamPlayerIds = activeTeamId === 'all' 
+      ? null 
+      : teamPlayers.filter(tp => tp.teamId === activeTeamId).map(tp => tp.playerId);
+
+    filteredMatches.forEach(match => {
       match.players.forEach(p => {
+        // Only include this player if they belong to the active team or if no team filter is selected
+        if (activeTeamPlayerIds && !activeTeamPlayerIds.includes(p.id)) {
+          return;
+        }
+
         if (!stats[p.name]) {
           stats[p.name] = {
             name: p.name,
@@ -1259,17 +1379,49 @@ export default function App() {
       });
     });
 
+    // If a team filter is active, make sure all team members appear, even with zeros if they haven't played
+    if (activeTeamId !== 'all' && activeTeamPlayerIds) {
+      const activeTeamPlayers = players.filter(p => activeTeamPlayerIds.includes(p.id));
+      activeTeamPlayers.forEach(p => {
+        if (!stats[p.name]) {
+          stats[p.name] = {
+            name: p.name,
+            number: p.number,
+            totalTime: 0,
+            points: 0,
+            assists: 0,
+            rebounds: 0,
+            steals: 0,
+            blocks: 0,
+            turnovers: 0,
+            fgm: 0, fga: 0,
+            threeFgm: 0, threeFga: 0,
+            ftm: 0, fta: 0,
+            pf: 0,
+            matches: 0
+          };
+        }
+      });
+    }
+
     return Object.values(stats);
-  }, [history]);
+  }, [history, activeTeamId, teamPlayers, players]);
 
   const startNewMatch = () => {
-    if (!opponent.trim() || selectedStarters.length !== 5) return;
+    if (!opponent.trim() || selectedStarters.length !== 5 || (teams.length > 0 && !selectedMatchTeamId)) return;
 
     const starting5Names = players
       .filter(p => selectedStarters.includes(p.id))
       .map(p => `#${p.number} ${p.name}`);
 
     setCurrentStarting5(starting5Names);
+
+    if (teams.length > 0 && selectedMatchTeamId) {
+      setMatchTeamId(selectedMatchTeamId);
+      setActiveTeamId(selectedMatchTeamId);
+    } else {
+      setMatchTeamId(null);
+    }
 
     setPlayers(prev => prev.map(p => {
       const isStarter = selectedStarters.includes(p.id);
@@ -1316,12 +1468,14 @@ export default function App() {
       opponent,
       players: finalPlayers,
       totalMatchTime: finalMatchTime,
-      starting5: currentStarting5
+      starting5: currentStarting5,
+      teamId: matchTeamId || undefined
     };
 
     setHistory([newEntry, ...history]);
     setPlayers(finalPlayers); // Update local state for reset
     setIsMatchActive(false);
+    setMatchTeamId(null);
     setGameClockRunning(false);
     setCurrentPeriod(1);
     setPeriodElapsed({ 1: 0, 2: 0, 3: 0, 4: 0 });
@@ -1497,6 +1651,15 @@ export default function App() {
                         onChange={(e) => {
                           const pId = e.target.value;
                           if (pId) {
+                            const playerToLink = players.find(p => p.id === pId);
+                            if (playerToLink) {
+                              const hasNumberConflict = teamRelatedPlayers.some(p => p.number.trim() === playerToLink.number.trim());
+                              if (hasNumberConflict) {
+                                alert(`Kan speler niet koppelen: er is al een teamgenoot met rugnummer #${playerToLink.number} in het team "${team.name}"!`);
+                                e.target.value = '';
+                                return;
+                              }
+                            }
                             const mappingId = generateId();
                             const mapping: TeamPlayer = {
                               id: mappingId,
@@ -1845,7 +2008,7 @@ export default function App() {
              <motion.div 
                key={player.id}
                layout
-               className="bg-surface rounded-2xl overflow-hidden shadow-xl border border-white/10"
+               className={`rounded-2xl overflow-hidden shadow-xl border transition-colors ${getTeamBgColorClass(activeTeamId)}`}
              >
                <div className="p-4 flex justify-between items-center bg-white/5 border-b border-white/5 gap-2">
                  <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -1911,148 +2074,163 @@ export default function App() {
     </div>
   );
 
-  const renderHistory = () => (
-    <div className="space-y-6">
-      <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">Wedstrijdhistorie</h2>
+  const renderHistory = () => {
+    const filteredHistory = activeTeamId === 'all' 
+      ? history 
+      : history.filter(m => m.teamId === activeTeamId);
 
-      {history.length > 0 && (() => {
-        const hTotals = {
-          matches: history.length,
-          totalTime: 0,
-          totalPlayerTime: 0,
-          points: 0,
-          fgm: 0, fga: 0,
-          threeFgm: 0, threeFga: 0,
-          ftm: 0, fta: 0,
-          assists: 0,
-          rebounds: 0,
-          steals: 0,
-          blocks: 0,
-          turnovers: 0,
-          pf: 0
-        };
+    return (
+      <div className="space-y-6">
+        <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">Wedstrijdhistorie</h2>
 
-        history.forEach(match => {
-          hTotals.totalTime += match.totalMatchTime || 0;
-          match.players.forEach(p => {
-            hTotals.totalPlayerTime += p.totalTime || 0;
-            hTotals.points += p.stats.points || 0;
-            hTotals.fgm += p.stats.fgm || 0;
-            hTotals.fga += p.stats.fga || 0;
-            hTotals.threeFgm += p.stats.threeFgm || 0;
-            hTotals.threeFga += p.stats.threeFga || 0;
-            hTotals.ftm += p.stats.ftm || 0;
-            hTotals.fta += p.stats.fta || 0;
-            hTotals.assists += p.stats.assists || 0;
-            hTotals.rebounds += p.stats.rebounds || 0;
-            hTotals.steals += p.stats.steals || 0;
-            hTotals.blocks += p.stats.blocks || 0;
-            hTotals.turnovers += p.stats.turnovers || 0;
-            hTotals.pf += p.stats.pf || 0;
+        {filteredHistory.length > 0 && (() => {
+          const hTotals = {
+            matches: filteredHistory.length,
+            totalTime: 0,
+            totalPlayerTime: 0,
+            points: 0,
+            fgm: 0, fga: 0,
+            threeFgm: 0, threeFga: 0,
+            ftm: 0, fta: 0,
+            assists: 0,
+            rebounds: 0,
+            steals: 0,
+            blocks: 0,
+            turnovers: 0,
+            pf: 0
+          };
+
+          filteredHistory.forEach(match => {
+            hTotals.totalTime += match.totalMatchTime || 0;
+            match.players.forEach(p => {
+              hTotals.totalPlayerTime += p.totalTime || 0;
+              hTotals.points += p.stats.points || 0;
+              hTotals.fgm += p.stats.fgm || 0;
+              hTotals.fga += p.stats.fga || 0;
+              hTotals.threeFgm += p.stats.threeFgm || 0;
+              hTotals.threeFga += p.stats.threeFga || 0;
+              hTotals.ftm += p.stats.ftm || 0;
+              hTotals.fta += p.stats.fta || 0;
+              hTotals.assists += p.stats.assists || 0;
+              hTotals.rebounds += p.stats.rebounds || 0;
+              hTotals.steals += p.stats.steals || 0;
+              hTotals.blocks += p.stats.blocks || 0;
+              hTotals.turnovers += p.stats.turnovers || 0;
+              hTotals.pf += p.stats.pf || 0;
+            });
           });
-        });
 
-        return (
-          <div className="bg-gradient-to-br from-primary/15 to-primary/5 p-4 sm:p-5 rounded-3xl border border-primary/20 space-y-4 shadow-xl">
-            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b border-white/5 pb-3">
-              <div>
-                <h3 className="font-display font-black uppercase italic tracking-tight text-md sm:text-lg text-primary">Seizoenstotalen (Team)</h3>
-                <p className="text-[10px] text-text-muted uppercase font-bold tracking-widest">{hTotals.matches} Gespeelde Wedstrijden</p>
+          return (
+            <div className={`p-4 sm:p-5 rounded-3xl border space-y-4 shadow-xl transition-all ${activeTeamId === 'all' ? 'bg-gradient-to-br from-primary/15 to-primary/5 border-primary/20' : getTeamBgColorClass(activeTeamId)}`}>
+              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b border-white/5 pb-3">
+                <div>
+                  <h3 className="font-display font-black uppercase italic tracking-tight text-md sm:text-lg text-primary">Seizoenstotalen ({activeTeamId === 'all' ? 'Alle Teams' : (teams.find(t => t.id === activeTeamId)?.name || 'Team')})</h3>
+                  <p className="text-[10px] text-text-muted uppercase font-bold tracking-widest">{hTotals.matches} Gespeelde Wedstrijden</p>
+                </div>
+                <div className="text-left sm:text-right">
+                  <span className="text-[10px] text-text-muted uppercase font-bold tracking-[0.1em] block">Totale Team Speeltijd</span>
+                  <span className="font-mono text-lg sm:text-xl font-black text-white">{formatTime(hTotals.totalPlayerTime)}</span>
+                </div>
               </div>
-              <div className="text-left sm:text-right">
-                <span className="text-[10px] text-text-muted uppercase font-bold tracking-[0.1em] block">Totale Team Speeltijd</span>
-                <span className="font-mono text-lg sm:text-xl font-black text-white">{formatTime(hTotals.totalPlayerTime)}</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
-              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
-                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">PTN</p>
-                <p className="text-md sm:text-lg font-black text-primary">{hTotals.points}</p>
-                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.points / hTotals.matches).toFixed(1)} avg</p>
-              </div>
-              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
-                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">FG%</p>
-                <p className="text-md sm:text-lg font-black text-white">{calculatePercentage(hTotals.fgm, hTotals.fga)}</p>
-                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{hTotals.fgm}/{hTotals.fga}</p>
-              </div>
-              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
-                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">AST</p>
-                <p className="text-md sm:text-lg font-black text-white">{hTotals.assists}</p>
-                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.assists / hTotals.matches).toFixed(1)} avg</p>
-              </div>
-              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
-                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">REB</p>
-                <p className="text-md sm:text-lg font-black text-white">{hTotals.rebounds}</p>
-                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.rebounds / hTotals.matches).toFixed(1)} avg</p>
-              </div>
-              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
-                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">STL</p>
-                <p className="text-md sm:text-lg font-black text-white">{hTotals.steals}</p>
-                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.steals / hTotals.matches).toFixed(1)} avg</p>
-              </div>
-              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
-                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">TO</p>
-                <p className="text-md sm:text-lg font-black text-white">{hTotals.turnovers}</p>
-                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.turnovers / hTotals.matches).toFixed(1)} avg</p>
-              </div>
-              <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
-                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">PF</p>
-                <p className="text-md sm:text-lg font-black text-red-400">{hTotals.pf}</p>
-                <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.pf / hTotals.matches).toFixed(1)} avg</p>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      <div className="space-y-3">
-        {history.map(match => (
-          <div 
-            key={match.matchId}
-            onClick={() => setSelectedMatch(match)}
-            className="w-full bg-surface hover:bg-white/5 transition-all p-3 sm:p-4 rounded-2xl flex items-center justify-between shadow-lg border border-white/5 text-left cursor-pointer group active:scale-[0.98]"
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedMatch(match); }}
-          >
-            <div className="flex items-center gap-3 sm:gap-4 overflow-hidden">
-              <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
-                <Trophy size={20} className="sm:w-6 sm:h-6" />
-              </div>
-              <div className="truncate">
-                <h3 className="font-display font-black uppercase italic tracking-tight text-base sm:text-lg truncate">{match.opponent}</h3>
-                <div className="flex items-center gap-2">
-                  <p className="text-[9px] sm:text-[10px] text-text-muted uppercase tracking-widest font-bold">{formatDate(match.date)}</p>
-                  <span className="text-[9px] sm:text-[10px] text-primary/60 font-black">•</span>
-                  <p className="text-[9px] sm:text-[10px] text-primary font-black uppercase italic tracking-widest">{formatTime(match.totalMatchTime)}</p>
+              <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
+                <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                  <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">PTN</p>
+                  <p className="text-md sm:text-lg font-black text-primary">{hTotals.points}</p>
+                  <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.points / hTotals.matches).toFixed(1)} avg</p>
+                </div>
+                <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                  <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">FG%</p>
+                  <p className="text-md sm:text-lg font-black text-white">{calculatePercentage(hTotals.fgm, hTotals.fga)}</p>
+                  <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{hTotals.fgm}/{hTotals.fga}</p>
+                </div>
+                <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                  <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">AST</p>
+                  <p className="text-md sm:text-lg font-black text-white">{hTotals.assists}</p>
+                  <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.assists / hTotals.matches).toFixed(1)} avg</p>
+                </div>
+                <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                  <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">REB</p>
+                  <p className="text-md sm:text-lg font-black text-white">{hTotals.rebounds}</p>
+                  <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.rebounds / hTotals.matches).toFixed(1)} avg</p>
+                </div>
+                <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                  <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">STL</p>
+                  <p className="text-md sm:text-lg font-black text-white">{hTotals.steals}</p>
+                  <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.steals / hTotals.matches).toFixed(1)} avg</p>
+                </div>
+                <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                  <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">TO</p>
+                  <p className="text-md sm:text-lg font-black text-white">{hTotals.turnovers}</p>
+                  <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.turnovers / hTotals.matches).toFixed(1)} avg</p>
+                </div>
+                <div className="bg-dark/40 p-2.5 rounded-xl border border-white/5 text-center">
+                  <p className="text-[9px] text-text-muted uppercase font-black tracking-wider font-bold">PF</p>
+                  <p className="text-md sm:text-lg font-black text-red-400">{hTotals.pf}</p>
+                  <p className="text-[8px] text-text-muted/60 mt-0.5 font-bold">{(hTotals.pf / hTotals.matches).toFixed(1)} avg</p>
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2 sm:gap-4 text-right flex-shrink-0">
-              <div className="hidden sm:block">
-                <p className="text-xs text-text-muted uppercase">Spelers</p>
-                <p className="font-bold">{match.players.length}</p>
+          );
+        })()}
+
+        <div className="space-y-3">
+          {filteredHistory.map(match => (
+            <div 
+              key={match.matchId}
+              onClick={() => setSelectedMatch(match)}
+              className={`w-full transition-all p-3 sm:p-4 rounded-2xl flex items-center justify-between shadow-lg border text-left cursor-pointer group active:scale-[0.98] ${getTeamBgColorClass(match.teamId || 'all')} hover:brightness-110`}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedMatch(match); }}
+            >
+              <div className="flex items-center gap-3 sm:gap-4 overflow-hidden">
+                <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                  <Trophy size={20} className="sm:w-6 sm:h-6" />
+                </div>
+                <div className="truncate">
+                  <h3 className="font-display font-black uppercase italic tracking-tight text-base sm:text-lg truncate">{match.opponent}</h3>
+                  <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
+                    <p className="text-[9px] sm:text-[10px] text-text-muted uppercase tracking-widest font-bold">{formatDate(match.date)}</p>
+                    <span className="text-[9px] sm:text-[10px] text-primary/60 font-black">•</span>
+                    <p className="text-[9px] sm:text-[10px] text-primary font-black uppercase italic tracking-widest">{formatTime(match.totalMatchTime)}</p>
+                    {match.teamId && teams.find(t => t.id === match.teamId) && (
+                      <>
+                        <span className="text-[9px] sm:text-[10px] text-primary/60 font-black">•</span>
+                        <span className="text-[9px] sm:text-[10px] font-black uppercase font-display bg-primary/10 text-primary py-0.5 px-2 rounded-md border border-primary/20">
+                          {teams.find(t => t.id === match.teamId)?.name}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
-              <button 
-                onClick={(e) => { e.stopPropagation(); deleteMatch(match.matchId); }}
-                className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors active:scale-90 relative z-10"
-                title="Verwijderen"
-              >
-                <Trash2 size={16} className="sm:w-[18px] sm:h-[18px]" />
-              </button>
-              <ChevronRight className="text-text-muted w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-1 transition-transform" />
+              <div className="flex items-center gap-2 sm:gap-4 text-right flex-shrink-0">
+                <div className="hidden sm:block">
+                  <p className="text-xs text-text-muted uppercase font-bold tracking-wider">Spelers</p>
+                  <p className="font-mono text-xs text-text-muted">{match.players.length}</p>
+                </div>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); deleteMatch(match.matchId); }}
+                  className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors active:scale-90 relative z-10"
+                  title="Verwijderen"
+                >
+                  <Trash2 size={16} className="sm:w-[18px] sm:h-[18px]" />
+                </button>
+                <ChevronRight className="text-text-muted w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-1 transition-transform" />
+              </div>
             </div>
-          </div>
-        ))}
-        {history.length === 0 && (
-          <div className="py-20 text-center text-text-muted">
-            <HistoryIcon className="mx-auto mb-4 opacity-20" size={48} />
-            <p>Nog geen wedstrijden gespeeld.</p>
-          </div>
-        )}
+          ))}
+          {filteredHistory.length === 0 && (
+            <div className="py-20 text-center text-text-muted bg-surface/30 rounded-3xl border border-dashed border-white/10">
+              <HistoryIcon className="mx-auto mb-4 opacity-20" size={48} />
+              <p className="text-sm font-bold uppercase text-white font-display">Nog geen wedstrijden</p>
+              <p className="text-xs text-text-muted max-w-sm mx-auto leading-relaxed mt-1">Er zijn geen wedstrijden gevonden voor de huidige selectie.</p>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderPlayers = () => (
     <div className="space-y-6">
@@ -2085,7 +2263,7 @@ export default function App() {
           </div>
         ) : (
           filteredPlayers.map(player => (
-            <div key={player.id} className="bg-surface p-3 sm:p-4 rounded-2xl border border-white/5 shadow-lg flex items-center justify-between gap-2 group min-w-0">
+            <div key={player.id} className={`p-3 sm:p-4 rounded-2xl border shadow-lg flex items-center justify-between gap-2 group min-w-0 transition-colors ${getTeamBgColorClass(activeTeamId)}`}>
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary text-white flex items-center justify-center font-black italic text-base sm:text-lg shadow-inner flex-shrink-0">
                   #{player.number}
@@ -2146,12 +2324,12 @@ export default function App() {
             </button>
           )}
         </div>
-        <div className="overflow-hidden bg-surface rounded-2xl sm:rounded-3xl border border-white/10 shadow-2xl">
+        <div className={`overflow-hidden rounded-2xl sm:rounded-3xl border shadow-2xl transition-colors ${getTeamBgColorClass(activeTeamId)}`}>
           <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full text-left border-collapse min-w-[900px]">
               <thead>
                 <tr className="bg-white/5 text-[9px] sm:text-[10px] uppercase tracking-widest text-text-muted border-b border-white/5 font-bold italic">
-                  <th className="px-3 sm:px-4 py-3 sm:py-4 sticky left-0 bg-surface sm:relative sm:bg-transparent z-10">Speler</th>
+                  <th className={`px-3 sm:px-4 py-3 sm:py-4 sticky left-0 sm:relative sm:bg-transparent z-10 transition-colors ${getTeamStickyBgColorClass(activeTeamId)}`}>Speler</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">W</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">Tijd</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">PTN</th>
@@ -2169,7 +2347,7 @@ export default function App() {
               <tbody>
                 {stats.map((s: any) => (
                   <tr key={s.name} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 sticky left-0 bg-surface sm:relative sm:bg-transparent z-10">
+                    <td className={`px-3 sm:px-4 py-3 sm:py-4 sticky left-0 sm:relative sm:bg-transparent z-10 transition-colors ${getTeamStickyBgColorClass(activeTeamId)}`}>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-primary">#{s.number}</span>
                         <span className="font-medium text-xs sm:text-sm whitespace-nowrap">{s.name}</span>
@@ -2177,16 +2355,16 @@ export default function App() {
                     </td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{s.matches}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{formatTime(s.totalTime)}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-bold text-primary text-xs sm:text-sm">{Math.round(s.points / s.matches)} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-bold text-primary text-xs sm:text-sm">{s.matches > 0 ? Math.round(s.points / s.matches) : 0} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.fgm, s.fga)}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.threeFgm, s.threeFga)}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.ftm, s.fta)}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{(s.rebounds / s.matches).toFixed(1)}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{(s.assists / s.matches).toFixed(1)}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{(s.steals / s.matches).toFixed(1)}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{(s.blocks / s.matches).toFixed(1)}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{(s.turnovers / s.matches).toFixed(1)}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right font-semibold text-red-400">{(s.pf / s.matches).toFixed(1)}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.rebounds / s.matches).toFixed(1) : '0.0'}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.assists / s.matches).toFixed(1) : '0.0'}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.steals / s.matches).toFixed(1) : '0.0'}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.blocks / s.matches).toFixed(1) : '0.0'}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.turnovers / s.matches).toFixed(1) : '0.0'}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right font-semibold text-red-400">{s.matches > 0 ? (s.pf / s.matches).toFixed(1) : '0.0'}</td>
                   </tr>
                 ))}
 
@@ -2209,7 +2387,7 @@ export default function App() {
 
                   return (
                     <tr className="bg-primary/15 border-t border-primary/30 font-bold text-white relative z-10">
-                      <td className="px-3 sm:px-4 py-4 sticky left-0 bg-[#231710] sm:relative sm:bg-transparent z-10">
+                      <td className={`px-3 sm:px-4 py-4 sticky left-0 sm:relative sm:bg-transparent z-10 transition-colors ${activeTeamId === 'all' ? 'bg-[#231710]' : getTeamStickyBgColorClass(activeTeamId)}`}>
                         <div className="flex items-center gap-2">
                           <span className="font-display font-black text-primary">TEAM</span>
                           <span className="font-display font-black uppercase text-xs sm:text-sm whitespace-nowrap text-primary">TOTAAL</span>
@@ -2256,6 +2434,10 @@ export default function App() {
 
   const updatePlayer = async (id: string, name: string, number: string, position: string) => {
     if (!currentUser) return;
+    if (isJerseyNumberConflictingForPlayer(number, id)) {
+      alert(`Kan speler niet wijzigen: er is al een teamgenoot met rugnummer #${number}!`);
+      return;
+    }
     try {
       const playerDocRef = doc(db, 'players', id);
       await setDoc(playerDocRef, {
@@ -2344,24 +2526,34 @@ export default function App() {
           </div>
           <div className="flex items-center gap-1.5 overflow-x-auto max-w-full">
             <button
-              onClick={() => setActiveTeamId('all')}
-              className={`px-3.5 py-1.5 rounded-xl font-display font-medium text-xs uppercase italic tracking-wider transition-all active:scale-95 ${
+              onClick={() => {
+                if (isMatchActive) return;
+                setActiveTeamId('all');
+              }}
+              disabled={isMatchActive}
+              className={`px-3.5 py-1.5 rounded-xl font-display font-medium text-xs uppercase italic tracking-wider transition-all flex items-center gap-1.5 ${
                 activeTeamId === 'all'
                   ? 'bg-primary text-white font-black shadow-lg shadow-primary/20'
                   : 'bg-white/5 hover:bg-white/10 text-text-muted hover:text-white'
-              }`}
+              } ${isMatchActive ? 'opacity-40 cursor-not-allowed' : 'active:scale-95'}`}
+              title={isMatchActive ? "Stop de actieve wedstrijd om van team te switchen" : "Laat alle spelers zien"}
             >
               Alle Spelers
             </button>
             {teams.map(team => (
               <button
                 key={team.id}
-                onClick={() => setActiveTeamId(team.id)}
-                className={`px-3.5 py-1.5 rounded-xl font-display font-medium text-xs uppercase italic tracking-wider transition-all active:scale-95 flex items-center gap-1.5 ${
+                onClick={() => {
+                  if (isMatchActive) return;
+                  setActiveTeamId(team.id);
+                }}
+                disabled={isMatchActive}
+                className={`px-3.5 py-1.5 rounded-xl font-display font-medium text-xs uppercase italic tracking-wider transition-all flex items-center gap-1.5 ${
                   activeTeamId === team.id
-                    ? 'bg-primary text-white font-black shadow-lg shadow-primary/20'
+                    ? getTeamButtonColorClass(team.id)
                     : 'bg-white/5 hover:bg-white/10 text-text-muted hover:text-white'
-                }`}
+                } ${isMatchActive ? 'opacity-40 cursor-not-allowed' : 'active:scale-95'}`}
+                title={isMatchActive ? "Stop de actieve wedstrijd om van team te switchen" : `Switch naar team ${team.name}`}
               >
                 <span>{team.name}</span>
                 <span className={`text-[9px] font-bold font-mono rounded-full px-1.5 py-0.2 ${
@@ -2371,6 +2563,11 @@ export default function App() {
                 </span>
               </button>
             ))}
+            {isMatchActive && (
+              <span className="text-[10px] text-red-500 font-black uppercase italic tracking-widest pl-2 bg-red-500/10 py-1.5 px-3 rounded-lg border border-red-500/20 whitespace-nowrap animate-pulse">
+                Wedstrijd Actief
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -2385,13 +2582,10 @@ export default function App() {
           <AccountScreen
             currentUser={currentUser}
             name={profileName}
-            setName={setProfileName}
             club={profileClub}
-            setClub={setProfileClub}
             role={profileRole}
-            setRole={setProfileRole}
             newsletter={profileNewsletter}
-            setNewsletter={setProfileNewsletter}
+            onSaveProfile={handleSaveProfile}
             onLogout={handleLogout}
           />
         )}
@@ -2439,59 +2633,88 @@ export default function App() {
                   />
                 </div>
 
-                {filteredPlayers.length < 5 ? (
-                  <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-center space-y-2">
-                    <p className="text-red-400 text-xs font-bold uppercase tracking-wider">Te weinig spelers</p>
-                    <p className="text-text-muted text-xs">
-                      Je hebt minimaal 5 spelers nodig om een wedstrijd te kunnen starten. Voeg eerst spelers toe aan {activeTeamId === 'all' ? 'de spelerslijst' : 'dit team'}.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-text-muted uppercase font-bold tracking-wider">Basisopstelling (Starting 5)</span>
-                      <span className={`font-black uppercase tracking-widest ${selectedStarters.length === 5 ? 'text-primary' : 'text-white/60'}`}>
-                        {selectedStarters.length} / 5
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar bg-dark/40 p-2 rounded-xl border border-white/5">
-                      {filteredPlayers.map(p => {
-                        const isSelected = selectedStarters.includes(p.id);
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedStarters(prev => {
-                                if (prev.includes(p.id)) {
-                                  return prev.filter(id => id !== p.id);
-                                } else {
-                                  if (prev.length >= 5) return prev;
-                                  return [...prev, p.id];
-                                }
-                              });
-                            }}
-                            className={`flex items-center gap-2 p-2.5 rounded-xl text-left border transition-all text-xs ${
-                              isSelected 
-                                ? 'bg-primary/20 border-primary text-white font-bold' 
-                                : 'bg-surface border-white/5 text-text-muted hover:border-white/10 hover:text-white'
-                            }`}
-                          >
-                            <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] flex-shrink-0 ${isSelected ? 'bg-primary text-white font-black' : 'bg-white/5 text-text-muted'}`}>
-                              #{p.number}
-                            </span>
-                            <span className="truncate">{p.name}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                {teams.length > 0 && (
+                  <div>
+                    <label className="block text-sm text-text-muted mb-2 uppercase font-medium">Kies een Team voor deze wedstrijd</label>
+                    <select
+                      value={selectedMatchTeamId}
+                      onChange={(e) => {
+                        setSelectedMatchTeamId(e.target.value);
+                        setSelectedStarters([]);
+                      }}
+                      className="w-full bg-dark border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-primary transition-colors text-white text-sm cursor-pointer"
+                    >
+                      <option value="" disabled>-- Selecteer een Team --</option>
+                      {teams.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
                   </div>
                 )}
 
+                {teams.length > 0 && !selectedMatchTeamId ? (
+                  <div className="bg-primary/5 border border-primary/15 rounded-2xl p-4 text-center">
+                    <p className="text-text-muted text-xs">Selecteer hierboven eerst een team om de basisopstelling te bepalen.</p>
+                  </div>
+                ) : (() => {
+                  const modalPlayers = teams.length > 0 && selectedMatchTeamId 
+                    ? getPlayersOfTeam(selectedMatchTeamId)
+                    : players;
+
+                  return modalPlayers.length < 5 ? (
+                    <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-center space-y-2">
+                      <p className="text-red-400 text-xs font-bold uppercase tracking-wider">Te weinig spelers</p>
+                      <p className="text-text-muted text-xs">
+                        Je hebt minimaal 5 spelers nodig om een wedstrijd te kunnen starten. Voeg eerst spelers toe aan {teams.length > 0 ? "dit team" : "de spelerslijst"}.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-text-muted uppercase font-bold tracking-wider font-display">Basisopstelling (Starting 5)</span>
+                        <span className={`font-black uppercase tracking-widest ${selectedStarters.length === 5 ? 'text-primary' : 'text-white/60'}`}>
+                          {selectedStarters.length} / 5
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar bg-dark/40 p-2 rounded-xl border border-white/5">
+                        {modalPlayers.map(p => {
+                          const isSelected = selectedStarters.includes(p.id);
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedStarters(prev => {
+                                  if (prev.includes(p.id)) {
+                                    return prev.filter(id => id !== p.id);
+                                  } else {
+                                    if (prev.length >= 5) return prev;
+                                    return [...prev, p.id];
+                                  }
+                                });
+                              }}
+                              className={`flex items-center gap-2 p-2.5 rounded-xl text-left border transition-all text-xs ${
+                                isSelected 
+                                  ? 'bg-primary/20 border-primary text-white font-bold' 
+                                  : 'bg-surface border-white/5 text-text-muted hover:border-white/10 hover:text-white'
+                              }`}
+                            >
+                              <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] flex-shrink-0 ${isSelected ? 'bg-primary text-white font-black' : 'bg-white/5 text-text-muted'}`}>
+                                #{p.number}
+                              </span>
+                              <span className="truncate">{p.name}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <button 
                   onClick={startNewMatch} 
-                  disabled={!opponent.trim() || selectedStarters.length !== 5 || players.length < 5}
-                  className="w-full btn-primary disabled:opacity-30 disabled:cursor-not-allowed uppercase font-display font-black italic tracking-widest text-sm py-4 rounded-xl shadow-lg mt-2 transition-all active:scale-95"
+                  disabled={!opponent.trim() || selectedStarters.length !== 5 || (teams.length > 0 && !selectedMatchTeamId)}
+                  className="w-full btn-primary disabled:opacity-30 disabled:cursor-not-allowed uppercase font-display font-black italic tracking-widest text-sm py-4 rounded-xl shadow-lg mt-2 transition-all active:scale-95 cursor-pointer"
                 >
                   Wedstrijd Starten
                 </button>
@@ -2547,22 +2770,22 @@ export default function App() {
                     </select>
                   </div>
                 </div>
-                {newPlayerNumber.trim() !== '' && players.some(p => p.number.trim() === newPlayerNumber.trim()) && (
+                {newPlayerNumber.trim() !== '' && activeTeamId !== 'all' && isJerseyNumberTakenInTeam(newPlayerNumber, activeTeamId) && (
                   <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs font-semibold text-center">
-                    Rugnummer {newPlayerNumber} is al in gebruik!
+                    Rugnummer {newPlayerNumber} is al in gebruik binnen dit team!
                   </div>
                 )}
                 <button 
                   onClick={() => {
                     if (!newPlayerName.trim() || !newPlayerNumber) return;
-                    if (players.some(p => p.number.trim() === newPlayerNumber.trim())) return;
+                    if (activeTeamId !== 'all' && isJerseyNumberTakenInTeam(newPlayerNumber, activeTeamId)) return;
                     addPlayer(newPlayerName, newPlayerNumber, newPlayerPosition);
                     setShowAddPlayerModal(false);
                     setNewPlayerName('');
                     setNewPlayerNumber('');
                   }} 
-                  disabled={!newPlayerName.trim() || !newPlayerNumber || players.some(p => p.number.trim() === newPlayerNumber.trim())}
-                  className="w-full btn-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                  disabled={!newPlayerName.trim() || !newPlayerNumber || (activeTeamId !== 'all' && isJerseyNumberTakenInTeam(newPlayerNumber, activeTeamId))}
+                  className="w-full btn-primary disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                 >
                   Speler Opslaan
                 </button>
@@ -2768,23 +2991,23 @@ export default function App() {
                     </select>
                   </div>
                 </div>
-                {editingPlayer && newPlayerNumber.trim() !== '' && players.some(p => p.id !== editingPlayer.id && p.number.trim() === newPlayerNumber.trim()) && (
+                {editingPlayer && newPlayerNumber.trim() !== '' && isJerseyNumberConflictingForPlayer(newPlayerNumber, editingPlayer.id) && (
                   <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs font-semibold text-center">
-                    Rugnummer {newPlayerNumber} is al in gebruik!
+                    Rugnummer {newPlayerNumber} is al in gebruik door een teamgenoot!
                   </div>
                 )}
                 <button 
                   onClick={() => {
                     if (!newPlayerName.trim() || !newPlayerNumber) return;
-                    if (players.some(p => p.id !== editingPlayer.id && p.number.trim() === newPlayerNumber.trim())) return;
+                    if (isJerseyNumberConflictingForPlayer(newPlayerNumber, editingPlayer.id)) return;
                     updatePlayer(editingPlayer.id, newPlayerName, newPlayerNumber, newPlayerPosition);
                     setShowEditPlayerModal(false);
                     setEditingPlayer(null);
                     setNewPlayerName('');
                     setNewPlayerNumber('');
                   }} 
-                  disabled={!newPlayerName.trim() || !newPlayerNumber || players.some(p => p.id !== editingPlayer.id && p.number.trim() === newPlayerNumber.trim())}
-                  className="w-full btn-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                  disabled={!newPlayerName.trim() || !newPlayerNumber || isJerseyNumberConflictingForPlayer(newPlayerNumber, editingPlayer.id)}
+                  className="w-full btn-primary disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                 >
                   Wijzigingen Opslaan
                 </button>

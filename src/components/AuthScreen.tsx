@@ -133,7 +133,7 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
         if (onSuccess) onSuccess(userCredential.user);
       } else if (mode === 'register') {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        sendRegistrationEmail(email);
+        await sendRegistrationEmail(email);
         if (onSuccess) onSuccess(userCredential.user);
       } else if (mode === 'forgot-password') {
         await sendPasswordResetEmail(auth, email);
@@ -157,7 +157,7 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
       const userCredential = await signInWithPopup(auth, googleProvider);
       const additionalInfo = getAdditionalUserInfo(userCredential);
       if (additionalInfo?.isNewUser) {
-        sendRegistrationEmail(userCredential.user.email || '', userCredential.user.displayName || undefined);
+        await sendRegistrationEmail(userCredential.user.email || '', userCredential.user.displayName || undefined);
       }
       if (onSuccess) onSuccess(userCredential.user);
     } catch (err: any) {

@@ -389,33 +389,27 @@ app.post("/api/send-registration-email", async (req, res) => {
       </html>
     `;
 
-    // Send both emails in parallel (or sequentially, we catch individually so failure of one doesn't block the other)
-    const results = await Promise.allSettled([
-      sendEmail({ to: email, subject: visitorSubject, html: visitorHtml, text: visitorText }),
-      sendEmail({ to: adminEmail, subject: adminSubject, html: adminHtml, text: adminText }),
-    ]);
-
-    const visitorResult = results[0];
-    const adminResult = results[1];
-
-    console.log("Email sending completed. Visitor:", visitorResult.status, "Admin:", adminResult.status);
-
+    // Send both emails in parallel in the background to avoid blocking the client UI
     res.json({
       success: true,
-      visitorEmail: {
-        status: visitorResult.status,
-        value: visitorResult.status === "fulfilled" ? visitorResult.value : null,
-        error: visitorResult.status === "rejected" ? visitorResult.reason?.message : null,
-      },
-      adminEmail: {
-        status: adminResult.status,
-        value: adminResult.status === "fulfilled" ? adminResult.value : null,
-        error: adminResult.status === "rejected" ? adminResult.reason?.message : null,
-      },
+      message: "Registration email processing started in the background."
+    });
+
+    Promise.allSettled([
+      sendEmail({ to: email, subject: visitorSubject, html: visitorHtml, text: visitorText }),
+      sendEmail({ to: adminEmail, subject: adminSubject, html: adminHtml, text: adminText }),
+    ]).then((results) => {
+      const visitorResult = results[0];
+      const adminResult = results[1];
+      console.log("Background email sending completed. Visitor:", visitorResult.status, "Admin:", adminResult.status);
+    }).catch((err) => {
+      console.error("Error in background email sending:", err);
     });
   } catch (error: any) {
     console.error("Fout bij het verwerken van registratiemail:", error);
-    res.status(500).json({ error: "Interne serverfout bij verzenden e-mails.", details: error.message });
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Interne serverfout bij verzenden e-mails.", details: error.message });
+    }
   }
 });
 

@@ -4,6 +4,7 @@ import {
   createUserWithEmailAndPassword, 
   sendPasswordResetEmail, 
   signInWithPopup, 
+  getAdditionalUserInfo,
   User
 } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
@@ -26,6 +27,25 @@ interface AuthScreenProps {
 }
 
 type AuthMode = 'login' | 'register' | 'forgot-password';
+
+const sendRegistrationEmail = async (email: string, name?: string) => {
+  try {
+    const response = await fetch('/api/send-registration-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, name }),
+    });
+    if (!response.ok) {
+      console.error('Failed to send registration email:', await response.text());
+    } else {
+      console.log('Registration email successfully triggered');
+    }
+  } catch (error) {
+    console.error('Error calling registration email API:', error);
+  }
+};
 
 export default function AuthScreen({ onSuccess }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>('login');
@@ -113,6 +133,7 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
         if (onSuccess) onSuccess(userCredential.user);
       } else if (mode === 'register') {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        sendRegistrationEmail(email);
         if (onSuccess) onSuccess(userCredential.user);
       } else if (mode === 'forgot-password') {
         await sendPasswordResetEmail(auth, email);
@@ -134,6 +155,10 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
 
     try {
       const userCredential = await signInWithPopup(auth, googleProvider);
+      const additionalInfo = getAdditionalUserInfo(userCredential);
+      if (additionalInfo?.isNewUser) {
+        sendRegistrationEmail(userCredential.user.email || '', userCredential.user.displayName || undefined);
+      }
       if (onSuccess) onSuccess(userCredential.user);
     } catch (err: any) {
       console.error(err);

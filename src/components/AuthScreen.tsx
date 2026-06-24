@@ -433,7 +433,7 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
                     disabled={loading}
                     className="flex-[2] bg-primary hover:bg-primary/90 text-white font-black font-display uppercase italic tracking-wider py-3.5 px-6 rounded-xl transition-all active:scale-[0.98] text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-primary/20 disabled:opacity-50"
                   >
-                    {loading ? 'Laden...' : 'Besturing Sturen'}
+                    {loading ? 'Laden...' : 'Wachtwoord aanvragen'}
                   </button>
                 </div>
               </form>

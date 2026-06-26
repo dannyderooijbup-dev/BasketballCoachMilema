@@ -24,6 +24,7 @@ export interface Stats {
   ftm: number;
   fta: number;
   pf: number;
+  plusMinus?: number;
 }
 
 export interface PlayerAction {
@@ -53,6 +54,8 @@ export interface MatchHistoryEntry {
   totalMatchTime: number;
   starting5?: string[];
   teamId?: string;
+  opponentScore?: number;
+  teamScore?: number;
 }
 
 export type Tab = 'dashboard' | 'history' | 'players' | 'season' | 'account' | 'teams';

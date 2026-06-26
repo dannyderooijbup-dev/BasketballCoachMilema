@@ -144,6 +144,7 @@ export default function App() {
   const [matchTeamId, setMatchTeamId] = useState<string | null>(null);
   const [selectedMatchTeamId, setSelectedMatchTeamId] = useState<string>('');
   const [opponent, setOpponent] = useState('');
+  const [opponentScore, setOpponentScore] = useState<number>(0);
   const [showMatchStartModal, setShowMatchStartModal] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<MatchHistoryEntry | null>(null);
   const [selectedStarters, setSelectedStarters] = useState<string[]>([]);
@@ -457,6 +458,15 @@ export default function App() {
     }
 
     try {
+      const savedOpponentScore = localStorage.getItem('opponentScore');
+      if (savedOpponentScore) {
+        setOpponentScore(JSON.parse(savedOpponentScore));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    try {
       const savedClock = localStorage.getItem('gameClockRunning');
       if (savedClock) {
         setGameClockRunning(JSON.parse(savedClock) === true);
@@ -597,6 +607,10 @@ export default function App() {
               setOpponent(inst.opponent);
               localStorage.setItem('opponent', inst.opponent);
             }
+            if (inst.opponentScore !== undefined) {
+              setOpponentScore(inst.opponentScore);
+              localStorage.setItem('opponentScore', JSON.stringify(inst.opponentScore));
+            }
             if (inst.gameClockRunning !== undefined) {
               setGameClockRunning(inst.gameClockRunning);
               localStorage.setItem('gameClockRunning', JSON.stringify(inst.gameClockRunning));
@@ -645,6 +659,7 @@ export default function App() {
             instellingen: {
               isMatchActive,
               opponent,
+              opponentScore,
               gameClockRunning,
               currentPeriod,
               periodElapsed,
@@ -776,6 +791,7 @@ export default function App() {
     localStorage.setItem('isMatchActive', JSON.stringify(isMatchActive));
     localStorage.setItem('matchTeamId', matchTeamId || '');
     localStorage.setItem('opponent', opponent);
+    localStorage.setItem('opponentScore', JSON.stringify(opponentScore));
     localStorage.setItem('gameClockRunning', JSON.stringify(gameClockRunning));
     localStorage.setItem('currentPeriod', JSON.stringify(currentPeriod));
     localStorage.setItem('periodElapsed', JSON.stringify(periodElapsed));
@@ -803,6 +819,7 @@ export default function App() {
       instellingen: {
         isMatchActive,
         opponent,
+        opponentScore,
         gameClockRunning,
         currentPeriod,
         periodElapsed,
@@ -814,7 +831,7 @@ export default function App() {
     }, { merge: true }).catch(err => {
       console.error("Fout bij opslaan naar Firestore:", err);
     });
-  }, [players, history, isMatchActive, matchTeamId, opponent, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5, currentUser, profileName, profileClub, profileRole, profileNewsletter]);
+  }, [players, history, isMatchActive, matchTeamId, opponent, opponentScore, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5, currentUser, profileName, profileClub, profileRole, profileNewsletter]);
 
   const handleSaveProfile = async (updatedData: { name: string; club: string; role: string; newsletter: boolean }) => {
     if (!currentUser) return;
@@ -1207,6 +1224,28 @@ export default function App() {
     }));
   };
 
+  const adjustOpponentScore = (delta: number) => {
+    setOpponentScore(prev => {
+      const nextScore = Math.max(0, prev + delta);
+      const actualChange = nextScore - prev;
+
+      if (actualChange !== 0) {
+        // Decrement +/- of all running players by the actual change in opponent score
+        setPlayers(pPrev => pPrev.map(p => {
+          if (!p.isRunning) return p;
+          const newStats = { ...p.stats };
+          newStats.plusMinus = (newStats.plusMinus || 0) - actualChange;
+          return {
+            ...p,
+            stats: newStats
+          };
+        }));
+      }
+
+      return nextScore;
+    });
+  };
+
   const updateStat = (id: string, stat: keyof Player['stats'], delta: number) => {
     const player = players.find(p => p.id === id);
     if (!player) return;
@@ -1261,13 +1300,22 @@ export default function App() {
     }
 
     // Update player stats
+    const pointsScored = statChanges.points || 0;
     setPlayers(prev => prev.map(p => {
-      if (p.id !== id) return p;
+      const isTarget = p.id === id;
       const newStats = { ...p.stats };
-      Object.entries(statChanges).forEach(([key, val]) => {
-        const statKey = key as keyof Player['stats'];
-        newStats[statKey] = Math.max(0, (newStats[statKey] || 0) + (val || 0));
-      });
+
+      if (isTarget) {
+        Object.entries(statChanges).forEach(([key, val]) => {
+          const statKey = key as keyof Player['stats'];
+          newStats[statKey] = Math.max(0, (newStats[statKey] || 0) + (val || 0));
+        });
+      }
+
+      if (pointsScored !== 0 && p.isRunning) {
+        newStats.plusMinus = (newStats.plusMinus || 0) + pointsScored;
+      }
+
       return {
         ...p,
         stats: newStats
@@ -1296,15 +1344,22 @@ export default function App() {
       const lastAction = updated.pop();
       if (!lastAction) return prev;
 
-      // Subtract the stats from the target player
+      // Subtract the stats from the target player and update +/-
+      const pointsScored = lastAction.statChanges.points || 0;
       setPlayers(pPrev => pPrev.map(p => {
-        if (p.id !== lastAction.playerId) return p;
-
+        const isTarget = p.id === lastAction.playerId;
         const newStats = { ...p.stats };
-        Object.entries(lastAction.statChanges).forEach(([key, val]) => {
-          const statKey = key as keyof Player['stats'];
-          newStats[statKey] = Math.max(0, (newStats[statKey] || 0) - (val as number || 0));
-        });
+
+        if (isTarget) {
+          Object.entries(lastAction.statChanges).forEach(([key, val]) => {
+            const statKey = key as keyof Player['stats'];
+            newStats[statKey] = Math.max(0, (newStats[statKey] || 0) - (val as number || 0));
+          });
+        }
+
+        if (pointsScored !== 0 && p.isRunning) {
+          newStats.plusMinus = (newStats.plusMinus || 0) - pointsScored;
+        }
 
         return {
           ...p,
@@ -1357,6 +1412,7 @@ export default function App() {
             threeFgm: 0, threeFga: 0,
             ftm: 0, fta: 0,
             pf: 0,
+            plusMinus: 0,
             matches: 0
           };
         }
@@ -1375,6 +1431,7 @@ export default function App() {
         s.ftm += p.stats.ftm;
         s.fta += p.stats.fta;
         s.pf += p.stats.pf || 0;
+        s.plusMinus += p.stats.plusMinus || 0;
         s.matches += 1;
       });
     });
@@ -1398,6 +1455,7 @@ export default function App() {
             threeFgm: 0, threeFga: 0,
             ftm: 0, fta: 0,
             pf: 0,
+            plusMinus: 0,
             matches: 0
           };
         }
@@ -1461,6 +1519,7 @@ export default function App() {
     });
 
     const finalMatchTime = getTotalMatchDuration();
+    const teamScore = finalPlayers.reduce((sum, p) => sum + (p.stats.points || 0), 0);
 
     const newEntry: MatchHistoryEntry = {
       matchId: generateId(),
@@ -1469,7 +1528,9 @@ export default function App() {
       players: finalPlayers,
       totalMatchTime: finalMatchTime,
       starting5: currentStarting5,
-      teamId: matchTeamId || undefined
+      teamId: matchTeamId || undefined,
+      teamScore,
+      opponentScore
     };
 
     setHistory([newEntry, ...history]);
@@ -1484,6 +1545,7 @@ export default function App() {
     setCurrentStarting5([]);
     setSelectedStarters([]);
     setOpponent('');
+    setOpponentScore(0);
   };
 
   const clearMatchStats = () => {
@@ -1506,6 +1568,7 @@ export default function App() {
       setPeriodElapsed({ 1: 0, 2: 0, 3: 0, 4: 0 });
       setMatchClockStartTime(null);
       setGlobalActionsLog([]);
+      setOpponentScore(0);
     }
   };
 
@@ -1528,6 +1591,7 @@ export default function App() {
     setCurrentStarting5([]);
     setSelectedStarters([]);
     setOpponent('');
+    setOpponentScore(0);
   };
 
   const getNameFontSize = (name: string) => {
@@ -1824,7 +1888,80 @@ export default function App() {
         </div>
       </div>
  
-       {/* Game Clock Control */}
+      {/* Live Scoreboard */}
+      {isMatchActive && (
+        <div className="bg-surface p-5 sm:p-8 rounded-2xl shadow-xl border border-white/10 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-2 h-full bg-primary" />
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+            
+            {/* Home Team */}
+            <div className="flex-1 text-center md:text-left">
+              <span className="text-text-muted text-[10px] sm:text-xs uppercase tracking-[0.2em] font-bold block mb-1">EIGEN TEAM</span>
+              <div className="flex items-center justify-center md:justify-start gap-4">
+                <span className="text-4xl sm:text-6xl font-mono font-black text-primary drop-shadow-[0_0_15px_rgba(255,106,0,0.3)]">
+                  {players.reduce((sum, p) => sum + (p.stats.points || 0), 0)}
+                </span>
+                <div className="text-left hidden sm:block border-l border-white/10 pl-4 py-1">
+                  <span className="text-[10px] text-text-muted uppercase tracking-widest block font-bold">Live score</span>
+                  <span className="text-[9px] text-primary/80 uppercase tracking-widest block font-bold">Automatisch bijgewerkt</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Separator / Period Info */}
+            <div className="flex flex-col items-center justify-center bg-dark/50 px-6 py-3 rounded-2xl border border-white/5 min-w-[120px]">
+              <span className="text-text-muted text-[9px] uppercase tracking-widest font-bold mb-0.5">SCOREBOARD</span>
+              <span className="text-lg font-display font-black italic uppercase text-white/40 tracking-widest">VS</span>
+              <span className="bg-primary/20 text-primary border border-primary/20 px-2 py-0.5 rounded-full text-[9px] font-bold font-mono tracking-wider uppercase mt-1">
+                {getPeriodLabel(currentPeriod)}
+              </span>
+            </div>
+
+            {/* Opponent Team */}
+            <div className="flex-1 text-center md:text-right w-full sm:w-auto">
+              <span className="text-text-muted text-[10px] sm:text-xs uppercase tracking-[0.2em] font-bold block mb-1 truncate">{opponent || 'TEGENSTANDER'}</span>
+              <div className="flex flex-col sm:flex-row items-center justify-center md:justify-end gap-4">
+                <div className="flex items-center gap-2 order-2 sm:order-1 border-t sm:border-t-0 sm:border-r border-white/10 pt-2 sm:pt-0 sm:pr-4 py-1">
+                  <button 
+                    onClick={() => adjustOpponentScore(-1)}
+                    className="p-1.5 px-2.5 bg-white/5 hover:bg-white/10 text-white rounded-lg text-xs font-black transition-all active:scale-90"
+                    title="-1 PT"
+                  >
+                    -1
+                  </button>
+                  <button 
+                    onClick={() => adjustOpponentScore(1)}
+                    className="p-1.5 px-2.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg text-xs font-black transition-all active:scale-90"
+                    title="+1 PT"
+                  >
+                    +1
+                  </button>
+                  <button 
+                    onClick={() => adjustOpponentScore(2)}
+                    className="p-1.5 px-2.5 bg-primary text-white rounded-lg text-xs font-black transition-all active:scale-90"
+                    title="+2 PT"
+                  >
+                    +2
+                  </button>
+                  <button 
+                    onClick={() => adjustOpponentScore(3)}
+                    className="p-1.5 px-2.5 bg-[#ff6a00] text-white rounded-lg text-xs font-black transition-all active:scale-90"
+                    title="+3 PT"
+                  >
+                    +3
+                  </button>
+                </div>
+                <span className="text-4xl sm:text-6xl font-mono font-black text-white order-1 sm:order-2">
+                  {opponentScore}
+                </span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Game Clock Control */}
        <div className="bg-surface p-4 sm:p-6 rounded-2xl shadow-xl border border-white/10 flex flex-col sm:flex-row justify-between items-center gap-4">
          <div className="flex items-center gap-4 w-full sm:w-auto">
            <div className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl ${gameClockRunning ? 'bg-primary shadow-[0_0_20px_rgba(255,106,0,0.4)]' : (isMatchActive ? 'bg-white/5' : 'bg-white/2 opacity-20')} transition-all`}>
@@ -2188,7 +2325,14 @@ export default function App() {
                   <Trophy size={20} className="sm:w-6 sm:h-6" />
                 </div>
                 <div className="truncate">
-                  <h3 className="font-display font-black uppercase italic tracking-tight text-base sm:text-lg truncate">{match.opponent}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-display font-black uppercase italic tracking-tight text-base sm:text-lg truncate">{match.opponent}</h3>
+                    {(match.teamScore !== undefined || match.opponentScore !== undefined) && (
+                      <span className="bg-primary/25 text-primary border border-primary/20 px-2 py-0.5 rounded-lg text-xs font-mono font-black select-none">
+                        {match.teamScore ?? 0} - {match.opponentScore ?? 0}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
                     <p className="text-[9px] sm:text-[10px] text-text-muted uppercase tracking-widest font-bold">{formatDate(match.date)}</p>
                     <span className="text-[9px] sm:text-[10px] text-primary/60 font-black">•</span>
@@ -2342,6 +2486,7 @@ export default function App() {
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">BLK</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">TO</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">PF</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right font-display font-black text-primary">+/-</th>
                 </tr>
               </thead>
               <tbody>
@@ -2365,6 +2510,9 @@ export default function App() {
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.blocks / s.matches).toFixed(1) : '0.0'}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.turnovers / s.matches).toFixed(1) : '0.0'}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right font-semibold text-red-400">{s.matches > 0 ? (s.pf / s.matches).toFixed(1) : '0.0'}</td>
+                    <td className={`px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right font-bold ${s.plusMinus > 0 ? 'text-green-400' : s.plusMinus < 0 ? 'text-red-400' : 'text-white'}`}>
+                      {s.plusMinus > 0 ? `+${s.plusMinus}` : s.plusMinus}
+                    </td>
                   </tr>
                 ))}
 
@@ -2384,6 +2532,7 @@ export default function App() {
                   let totalBlocks = stats.reduce((sum, s) => sum + (s.blocks || 0), 0);
                   let totalTurnovers = stats.reduce((sum, s) => sum + (s.turnovers || 0), 0);
                   let totalPf = stats.reduce((sum, s) => sum + (s.pf || 0), 0);
+                  let totalPlusMinus = stats.reduce((sum, s) => sum + (s.plusMinus || 0), 0);
 
                   return (
                     <tr className="bg-primary/15 border-t border-primary/30 font-bold text-white relative z-10">
@@ -2407,13 +2556,16 @@ export default function App() {
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalBlocks / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalTurnovers / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-red-300 font-bold">{totalW > 0 ? (totalPf / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-red-300/80 font-normal italic">avg</span></td>
+                      <td className={`px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right font-bold ${totalPlusMinus > 0 ? 'text-green-400' : totalPlusMinus < 0 ? 'text-red-400' : 'text-white'}`}>
+                        {totalPlusMinus > 0 ? `+${totalPlusMinus}` : totalPlusMinus}
+                      </td>
                     </tr>
                   );
                 })()}
 
                 {stats.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="py-20 text-center text-text-muted">Geen data beschikbaar</td>
+                    <td colSpan={14} className="py-20 text-center text-text-muted">Geen data beschikbaar</td>
                   </tr>
                 )}
               </tbody>
@@ -2832,6 +2984,19 @@ export default function App() {
                     <div className="text-3xl sm:text-5xl font-display font-black italic text-primary/30 tracking-tighter">VS</div>
                     <div className="text-[21px] sm:text-[33px] font-display font-black uppercase italic tracking-tighter truncate max-w-[200px] sm:max-w-none">{selectedMatch.opponent}</div>
                   </div>
+                  {(selectedMatch.teamScore !== undefined || selectedMatch.opponentScore !== undefined) && (
+                    <div className="flex items-center gap-3 bg-dark/40 px-5 py-2.5 rounded-2xl border border-white/5">
+                      <div className="text-center">
+                        <span className="text-[8px] text-text-muted uppercase tracking-wider font-bold block">Eigen Team</span>
+                        <span className="text-2xl font-mono font-black text-primary">{selectedMatch.teamScore ?? 0}</span>
+                      </div>
+                      <div className="text-xl font-black text-text-muted select-none">-</div>
+                      <div className="text-center">
+                        <span className="text-[8px] text-text-muted uppercase tracking-wider font-bold block">Tegenstander</span>
+                        <span className="text-2xl font-mono font-black text-white">{selectedMatch.opponentScore ?? 0}</span>
+                      </div>
+                    </div>
+                  )}
                   <div className="text-center sm:text-right">
                     <p className="text-[10px] text-text-muted uppercase tracking-[0.2em] font-bold">Wedstrijdduur</p>
                     <p className="text-2xl sm:text-3xl font-mono text-primary font-black italic">{formatTime(selectedMatch.totalMatchTime)}</p>
@@ -2930,7 +3095,7 @@ export default function App() {
                           <div className="text-lg sm:text-xl font-mono font-bold text-primary flex-shrink-0">{formatTime(player.totalTime)}</div>
                         </div>
                         
-                        <div className="grid grid-cols-3 xs:grid-cols-6 gap-2">
+                        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
                           <HistoryStat label="PTN" value={player.stats.points} />
                           <HistoryStat label="AST" value={player.stats.assists} />
                           <HistoryStat label="REB" value={player.stats.rebounds} />
@@ -2938,6 +3103,18 @@ export default function App() {
                           <HistoryStat label="BLK" value={player.stats.blocks} />
                           <HistoryStat label="TO" value={player.stats.turnovers} />
                           <HistoryStat label="PF" value={player.stats.pf || 0} />
+                          <div className={`p-2 rounded-lg text-center border border-white/5 ${
+                            (player.stats.plusMinus || 0) > 0 
+                              ? 'bg-green-500/10 text-green-400 border-green-500/20' 
+                              : (player.stats.plusMinus || 0) < 0 
+                                ? 'bg-red-500/10 text-red-400 border-red-500/20' 
+                                : 'bg-dark/50 text-white'
+                          }`}>
+                            <div className="text-[8px] text-text-muted uppercase font-bold">+/-</div>
+                            <div className="text-sm font-bold mt-0.5">
+                              {(player.stats.plusMinus || 0) > 0 ? `+${player.stats.plusMinus}` : (player.stats.plusMinus || 0)}
+                            </div>
+                          </div>
                         </div>
 
                         {/* Sessie Logs removed */}

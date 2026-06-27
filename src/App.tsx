@@ -89,31 +89,113 @@ export default function App() {
     return false;
   };
 
+  const COLOR_SCHEMES: { [id: string]: { name: string; dotColor: string; bgClass: string; borderClass: string; borderActive: string; btnBg: string; shadowClass: string; accentText: string } } = {
+    blue: {
+      name: 'Blauw',
+      dotColor: 'bg-blue-500',
+      bgClass: 'bg-[#1e2e5c]',
+      borderClass: 'border-blue-500/30',
+      borderActive: 'border-blue-500',
+      btnBg: 'bg-blue-600',
+      shadowClass: 'shadow-blue-600/20',
+      accentText: 'text-blue-400'
+    },
+    purple: {
+      name: 'Paars',
+      dotColor: 'bg-purple-500',
+      bgClass: 'bg-[#3b1a40]',
+      borderClass: 'border-purple-500/30',
+      borderActive: 'border-purple-500',
+      btnBg: 'bg-purple-600',
+      shadowClass: 'shadow-purple-600/20',
+      accentText: 'text-purple-400'
+    },
+    emerald: {
+      name: 'Groen',
+      dotColor: 'bg-emerald-500',
+      bgClass: 'bg-[#103028]',
+      borderClass: 'border-emerald-500/30',
+      borderActive: 'border-emerald-500',
+      btnBg: 'bg-emerald-600',
+      shadowClass: 'shadow-emerald-600/20',
+      accentText: 'text-emerald-400'
+    },
+    red: {
+      name: 'Rood',
+      dotColor: 'bg-red-500',
+      bgClass: 'bg-[#4a1c1c]',
+      borderClass: 'border-red-500/30',
+      borderActive: 'border-red-500',
+      btnBg: 'bg-red-600',
+      shadowClass: 'shadow-red-600/20',
+      accentText: 'text-red-400'
+    },
+    orange: {
+      name: 'Oranje',
+      dotColor: 'bg-primary',
+      bgClass: 'bg-[#4d2512]',
+      borderClass: 'border-primary/30',
+      borderActive: 'border-primary',
+      btnBg: 'bg-primary',
+      shadowClass: 'shadow-primary/20',
+      accentText: 'text-primary'
+    }
+  };
+
+  const getTeamScheme = (team: Team | undefined, index?: number) => {
+    if (!team) return COLOR_SCHEMES.orange;
+    if (team.colorScheme && COLOR_SCHEMES[team.colorScheme]) {
+      return COLOR_SCHEMES[team.colorScheme];
+    }
+    const idx = index !== undefined ? index : teams.findIndex(t => t.id === team.id);
+    if (idx === 0) return COLOR_SCHEMES.blue;
+    if (idx === 1) return COLOR_SCHEMES.purple;
+    if (idx === 2) return COLOR_SCHEMES.emerald;
+    return COLOR_SCHEMES.orange;
+  };
+
+  const getTeamSchemeById = (teamId: string) => {
+    if (teamId === 'all') {
+      return {
+        bgClass: 'bg-surface',
+        borderClass: 'border-white/10',
+        btnBg: 'bg-primary',
+        shadowClass: 'shadow-primary/20',
+        accentText: 'text-primary'
+      };
+    }
+    const team = teams.find(t => t.id === teamId);
+    const index = teams.findIndex(t => t.id === teamId);
+    return getTeamScheme(team, index);
+  };
+
   const getTeamBgColorClass = (teamId: string) => {
     if (teamId === 'all') return 'bg-surface border-white/10';
-    const index = teams.findIndex(t => t.id === teamId);
-    if (index === 0) return 'bg-[#1e2e5c] border-blue-500/30';       // Indigo/Blue
-    if (index === 1) return 'bg-[#3b1a40] border-purple-500/30';     // Purple
-    if (index === 2) return 'bg-[#103028] border-emerald-500/30';    // Green
-    return 'bg-surface border-white/10';
+    const scheme = getTeamSchemeById(teamId);
+    return `${scheme.bgClass} ${scheme.borderClass}`;
   };
 
   const getTeamButtonColorClass = (teamId: string) => {
     if (teamId === 'all') return 'bg-primary text-white font-black shadow-lg shadow-primary/20';
-    const index = teams.findIndex(t => t.id === teamId);
-    if (index === 0) return 'bg-blue-600 text-white font-black shadow-lg shadow-blue-600/20';
-    if (index === 1) return 'bg-purple-600 text-white font-black shadow-lg shadow-purple-600/20';
-    if (index === 2) return 'bg-emerald-600 text-white font-black shadow-lg shadow-emerald-600/20';
-    return 'bg-primary text-white font-black shadow-lg';
+    const scheme = getTeamSchemeById(teamId);
+    return `${scheme.btnBg} text-white font-black shadow-lg ${scheme.shadowClass}`;
   };
 
   const getTeamStickyBgColorClass = (teamId: string) => {
     if (teamId === 'all') return 'bg-surface';
-    const index = teams.findIndex(t => t.id === teamId);
-    if (index === 0) return 'bg-[#1e2e5c]';
-    if (index === 1) return 'bg-[#3b1a40]';
-    if (index === 2) return 'bg-[#103028]';
-    return 'bg-surface';
+    const scheme = getTeamSchemeById(teamId);
+    return scheme.bgClass;
+  };
+
+  const updateTeamColorScheme = async (teamId: string, schemeName: string) => {
+    if (!currentUser) return;
+    try {
+      const teamRef = doc(db, 'teams', teamId);
+      await updateDoc(teamRef, { colorScheme: schemeName });
+      setTeams(prev => prev.map(t => t.id === teamId ? { ...t, colorScheme: schemeName } : t));
+    } catch (err) {
+      console.error("Fout bij bijwerken van teamkleur:", err);
+    }
   };
 
   useEffect(() => {
@@ -1664,13 +1746,14 @@ export default function App() {
               teamPlayers.some(tp => tp.teamId === team.id && tp.playerId === p.id)
             );
             const isActive = activeTeamId === team.id;
+            const scheme = getTeamScheme(team);
 
             return (
               <div 
                 key={team.id} 
                 className={`bg-surface rounded-2xl border transition-all p-5 flex flex-col justify-between ${
                   isActive 
-                    ? 'border-primary ring-1 ring-primary/30 shadow-xl shadow-primary/5 bg-surface/90' 
+                    ? `${scheme.borderActive} ring-1 ring-white/10 shadow-xl bg-surface/90` 
                     : 'border-white/5 hover:border-white/10 shadow-lg'
                 }`}
               >
@@ -1692,9 +1775,38 @@ export default function App() {
                     {team.name}
                   </h3>
                   
-                  <p className="text-xs text-text-muted font-medium mb-4 flex items-center gap-1.5 font-sans">
+                  <p className="text-xs text-text-muted font-medium mb-2 flex items-center gap-1.5 font-sans">
                     <Users size={14} className="text-primary/70" /> {teamRelatedPlayers.length} Spelers gekoppeld
                   </p>
+
+                  {/* Subtle Color Options picker */}
+                  <div className="mt-3 mb-4 flex items-center justify-between bg-dark/30 p-2.5 rounded-xl border border-white/5">
+                    <span className="text-[10px] text-text-muted uppercase font-bold tracking-wider font-mono">
+                      Kleurthema
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {Object.entries(COLOR_SCHEMES).map(([schemeId, s]) => {
+                        const isSelected = team.colorScheme === schemeId || (!team.colorScheme && getTeamScheme(team).name === s.name);
+                        return (
+                          <button
+                            key={schemeId}
+                            type="button"
+                            onClick={() => updateTeamColorScheme(team.id, schemeId)}
+                            className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer ${s.dotColor} ${
+                              isSelected 
+                                ? 'ring-2 ring-white scale-110 shadow-md shadow-white/10' 
+                                : 'hover:scale-110 opacity-60 hover:opacity-100'
+                            }`}
+                            title={s.name}
+                          >
+                            {isSelected && (
+                              <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
                   <div className="space-y-1.5 mb-6 max-h-[140px] overflow-y-auto pr-1">
                     {teamRelatedPlayers.map(p => (

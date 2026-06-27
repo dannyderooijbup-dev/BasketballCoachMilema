@@ -65,6 +65,7 @@ export interface Team {
   name: string;
   userId: string;
   createdAt: number;
+  colorScheme?: string;
 }
 
 export interface TeamPlayer {

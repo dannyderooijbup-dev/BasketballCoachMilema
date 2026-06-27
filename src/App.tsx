@@ -1795,7 +1795,7 @@ export default function App() {
                   </p>
 
                   {/* Subtle Color Options picker */}
-                  <div className="mt-3 mb-4 flex items-center justify-between bg-dark/30 p-2.5 rounded-xl border border-white/5">
+                  <div className="mt-3 mb-4 flex items-center justify-between bg-dark/30 p-2.5 rounded-xl border border-white/5 color-scheme-picker-container">
                     <span className="text-[10px] text-text-muted uppercase font-bold tracking-wider font-mono">
                       Kleurthema
                     </span>
@@ -1807,7 +1807,7 @@ export default function App() {
                             key={schemeId}
                             type="button"
                             onClick={() => updateTeamColorScheme(team.id, schemeId)}
-                            className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer ${s.dotColor} ${
+                            className={`color-picker-dot w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer ${s.dotColor} ${
                               isSelected 
                                 ? 'ring-2 ring-white scale-110 shadow-md shadow-white/10' 
                                 : 'hover:scale-110 opacity-60 hover:opacity-100'

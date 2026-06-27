@@ -185,6 +185,20 @@
   color: #0F172A !important;
 }
 
+/* Color Scheme Picker Styling for Light Theme */
+.light-theme .color-scheme-picker-container {
+  background-color: #F1F5F9 !important;
+  border-color: #E2E8F0 !important;
+}
+
+.light-theme .color-picker-dot {
+  border: 1.5px solid rgba(15, 23, 42, 0.15) !important;
+}
+
+.light-theme .color-picker-dot.ring-white {
+  box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 4px #0F172A, 0 4px 6px -1px rgba(15, 23, 42, 0.15) !important;
+}
+
 /* Hover effects */
 .light-theme .hover\:bg-white\/5:hover {
   background-color: rgba(15, 23, 42, 0.04) !important;

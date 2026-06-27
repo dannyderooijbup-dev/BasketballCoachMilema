@@ -2839,7 +2839,7 @@ export default function App() {
       </header>
 
       {/* Active Team Filter Bar */}
-      {teams.length > 0 && activeTab !== 'teams' && activeTab !== 'account' && (
+      {teams.length > 0 && activeTab !== 'account' && (
         <div className="mb-6 bg-surface/30 p-2 rounded-2xl border border-white/5 flex flex-wrap items-center justify-between gap-3 backdrop-blur-sm">
           <div className="flex items-center gap-2 pl-2">
             <Shield className="text-primary" size={16} />

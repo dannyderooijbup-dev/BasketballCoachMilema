@@ -2617,6 +2617,11 @@ export default function App() {
 
   const renderSeason = () => {
     const stats = seasonStats();
+    const filteredMatchesForPDF = activeTeamId === 'all' 
+      ? history 
+      : history.filter(m => m.teamId === activeTeamId);
+    const calculatedTotalPlusMinus = filteredMatchesForPDF.reduce((sum, m) => sum + ((m.teamScore ?? 0) - (m.opponentScore ?? 0)), 0);
+
     return (
       <div className="space-y-6">
         <div className="flex justify-between items-center bg-surface/50 p-4 rounded-2xl border border-white/5 backdrop-blur-sm">
@@ -2625,7 +2630,7 @@ export default function App() {
           </h2>
           {stats.length > 0 && (
             <button 
-              onClick={() => exportSeasonStatsToPDF(stats, theme)}
+              onClick={() => exportSeasonStatsToPDF(stats, theme, calculatedTotalPlusMinus)}
               className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-4 py-2 rounded-xl text-xs sm:text-sm font-black italic uppercase font-display transition-all active:scale-95 border border-primary/20 shadow-lg shadow-primary/5"
             >
               <Download size={16} /> <span className="hidden xs:inline">PDF Export</span>
@@ -2696,7 +2701,10 @@ export default function App() {
                   let totalBlocks = stats.reduce((sum, s) => sum + (s.blocks || 0), 0);
                   let totalTurnovers = stats.reduce((sum, s) => sum + (s.turnovers || 0), 0);
                   let totalPf = stats.reduce((sum, s) => sum + (s.pf || 0), 0);
-                  let totalPlusMinus = stats.reduce((sum, s) => sum + (s.plusMinus || 0), 0);
+                  const filteredMatches = activeTeamId === 'all' 
+                    ? history 
+                    : history.filter(m => m.teamId === activeTeamId);
+                  let totalPlusMinus = filteredMatches.reduce((sum, m) => sum + ((m.teamScore ?? 0) - (m.opponentScore ?? 0)), 0);
 
                   return (
                     <tr className="bg-primary/15 border-t border-primary/30 font-bold text-white relative z-10">

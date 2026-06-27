@@ -119,7 +119,8 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
   const fgTotal = `${tFgm}/${tFga} (${calculatePercentage(tFgm, tFga)})`;
   const tpTotal = `${t3Fgm}/${t3Fga} (${calculatePercentage(t3Fgm, t3Fga)})`;
   const ftTotal = `${tFtm}/${tFta} (${calculatePercentage(tFtm, tFta)})`;
-  const pmTotal = tPm > 0 ? `+${tPm}` : `${tPm}`;
+  const matchDiff = (match.teamScore ?? 0) - (match.opponentScore ?? 0);
+  const pmTotal = matchDiff > 0 ? `+${matchDiff}` : `${matchDiff}`;
 
   tableData.push([
     'TEAM TOTAAL',
@@ -175,7 +176,7 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
   doc.save(`match_${match.opponent}_${new Date(match.date).toISOString().split('T')[0]}.pdf`);
 }
 
-export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = 'dark') {
+export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = 'dark', customTotalPlusMinus?: number) {
   const doc = new jsPDF();
   const isLight = theme === 'light';
   
@@ -286,7 +287,8 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
     totalPm += s.plusMinus || 0;
   });
 
-  const totalPmStr = totalPm > 0 ? `+${totalPm}` : `${totalPm}`;
+  const finalTotalPm = customTotalPlusMinus !== undefined ? customTotalPlusMinus : totalPm;
+  const totalPmStr = finalTotalPm > 0 ? `+${finalTotalPm}` : `${finalTotalPm}`;
 
   tableData.push([
     'TEAM TOTAAL',

@@ -8,15 +8,20 @@ import autoTable from 'jspdf-autotable';
 import { MatchHistoryEntry } from './types';
 import { formatTime, formatDate, calculatePercentage } from './utils';
 
-export function exportMatchToPDF(match: MatchHistoryEntry) {
+export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'light' = 'dark') {
   const doc = new jsPDF();
+  const isLight = theme === 'light';
   
   const paintPage = () => {
     const pageSize = doc.internal.pageSize;
     const w = pageSize.width ? pageSize.width : pageSize.getWidth();
     const h = pageSize.height ? pageSize.height : pageSize.getHeight();
-    // Dark background (#0F172A)
-    doc.setFillColor(15, 23, 42);
+    // Background color based on theme
+    if (isLight) {
+      doc.setFillColor(226, 232, 240); // #E2E8F0
+    } else {
+      doc.setFillColor(15, 23, 42); // #0F172A
+    }
     doc.rect(0, 0, w, h, 'F');
     // Accent orange strip on left edge
     doc.setFillColor(255, 106, 0);
@@ -27,13 +32,18 @@ export function exportMatchToPDF(match: MatchHistoryEntry) {
   paintPage();
   
   // Header
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('helvetica', 'bolditalic');
   doc.setFontSize(22);
   doc.setTextColor(255, 106, 0); // Primary orange
   doc.text('BASKETBALL COACH', 14, 20);
   
+  doc.setFont('helvetica', 'italic');
   doc.setFontSize(9);
-  doc.setTextColor(148, 163, 184); // Muted slate text
+  if (isLight) {
+    doc.setTextColor(71, 85, 105); // Muted slate text
+  } else {
+    doc.setTextColor(148, 163, 184); // Muted slate text
+  }
   doc.text('OFFICIËLE WEDSTRIJD STATISTIEKEN', 14, 26);
 
   // Separator line
@@ -41,12 +51,22 @@ export function exportMatchToPDF(match: MatchHistoryEntry) {
   doc.setLineWidth(0.5);
   doc.line(14, 30, 196, 30);
 
+  doc.setFont('helvetica', 'bolditalic');
   doc.setFontSize(14);
-  doc.setTextColor(255, 255, 255); // White text
+  if (isLight) {
+    doc.setTextColor(15, 23, 42);
+  } else {
+    doc.setTextColor(255, 255, 255); // White text
+  }
   doc.text(`Opponent: ${match.opponent}`, 14, 39);
   
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.setTextColor(148, 163, 184);
+  if (isLight) {
+    doc.setTextColor(71, 85, 105);
+  } else {
+    doc.setTextColor(148, 163, 184);
+  }
   doc.text(`Datum: ${formatDate(match.date)}`, 14, 46);
   doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}`, 14, 52);
 
@@ -123,21 +143,21 @@ export function exportMatchToPDF(match: MatchHistoryEntry) {
     body: tableData,
     theme: 'plain',
     styles: {
-      fillColor: [30, 41, 59], // #1E293B (Surface)
-      textColor: [255, 255, 255],
+      fillColor: isLight ? [255, 255, 255] : [30, 41, 59], // #FFFFFF or #1E293B
+      textColor: isLight ? [15, 23, 42] : [255, 255, 255],
       fontSize: 8,
       font: 'helvetica',
       cellPadding: 3,
-      lineColor: [15, 23, 42], // Line matches deep background
+      lineColor: isLight ? [226, 232, 240] : [15, 23, 42],
       lineWidth: 0.5,
     },
     headStyles: {
       fillColor: [255, 106, 0], // Neon orange
       textColor: [255, 255, 255],
-      fontStyle: 'bold',
+      fontStyle: 'bolditalic',
     },
     alternateRowStyles: {
-      fillColor: [21, 32, 51], // Darker accent
+      fillColor: isLight ? [241, 245, 249] : [21, 32, 51], // #F1F5F9 or #152033
     },
     margin: { left: 14, right: 14 },
     willDrawPage: function() {
@@ -147,7 +167,7 @@ export function exportMatchToPDF(match: MatchHistoryEntry) {
       if (data.row.raw[0] === 'TEAM TOTAAL') {
         data.cell.styles.fillColor = [255, 106, 0];
         data.cell.styles.textColor = [255, 255, 255];
-        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fontStyle = 'bolditalic';
       }
     }
   });
@@ -155,15 +175,20 @@ export function exportMatchToPDF(match: MatchHistoryEntry) {
   doc.save(`match_${match.opponent}_${new Date(match.date).toISOString().split('T')[0]}.pdf`);
 }
 
-export function exportSeasonStatsToPDF(stats: any[]) {
+export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = 'dark') {
   const doc = new jsPDF();
+  const isLight = theme === 'light';
   
   const paintPage = () => {
     const pageSize = doc.internal.pageSize;
     const w = pageSize.width ? pageSize.width : pageSize.getWidth();
     const h = pageSize.height ? pageSize.height : pageSize.getHeight();
-    // Dark background (#0F172A)
-    doc.setFillColor(15, 23, 42);
+    // Background color based on theme
+    if (isLight) {
+      doc.setFillColor(226, 232, 240); // #E2E8F0
+    } else {
+      doc.setFillColor(15, 23, 42); // #0F172A
+    }
     doc.rect(0, 0, w, h, 'F');
     // Accent orange strip on left edge
     doc.setFillColor(255, 106, 0);
@@ -174,13 +199,18 @@ export function exportSeasonStatsToPDF(stats: any[]) {
   paintPage();
   
   // Header
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('helvetica', 'bolditalic');
   doc.setFontSize(22);
   doc.setTextColor(255, 106, 0); // Primary orange
   doc.text('BASKETBALL COACH', 14, 20);
   
+  doc.setFont('helvetica', 'italic');
   doc.setFontSize(9);
-  doc.setTextColor(148, 163, 184); // Muted slate text
+  if (isLight) {
+    doc.setTextColor(71, 85, 105); // Muted slate text
+  } else {
+    doc.setTextColor(148, 163, 184); // Muted slate text
+  }
   doc.text('OFFICIËLE SEIZOENSRAPPORTAGE', 14, 26);
 
   // Separator line
@@ -188,12 +218,22 @@ export function exportSeasonStatsToPDF(stats: any[]) {
   doc.setLineWidth(0.5);
   doc.line(14, 30, 196, 30);
 
+  doc.setFont('helvetica', 'bolditalic');
   doc.setFontSize(14);
-  doc.setTextColor(255, 255, 255); // White text
+  if (isLight) {
+    doc.setTextColor(15, 23, 42);
+  } else {
+    doc.setTextColor(255, 255, 255); // White text
+  }
   doc.text('SEIZOENSSTATISTIEKEN (TEAM)', 14, 39);
   
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.setTextColor(148, 163, 184);
+  if (isLight) {
+    doc.setTextColor(71, 85, 105);
+  } else {
+    doc.setTextColor(148, 163, 184);
+  }
   doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}`, 14, 46);
 
   const totalTeamMatches = stats.length > 0 ? Math.max(...stats.map(s => s.matches || 0)) : 0;
@@ -271,21 +311,21 @@ export function exportSeasonStatsToPDF(stats: any[]) {
     body: tableData,
     theme: 'plain',
     styles: {
-      fillColor: [30, 41, 59], // #1E293B (Surface)
-      textColor: [255, 255, 255],
+      fillColor: isLight ? [255, 255, 255] : [30, 41, 59], // #FFFFFF or #1E293B
+      textColor: isLight ? [15, 23, 42] : [255, 255, 255],
       fontSize: 7.5,
       font: 'helvetica',
       cellPadding: 2.5,
-      lineColor: [15, 23, 42],
+      lineColor: isLight ? [226, 232, 240] : [15, 23, 42],
       lineWidth: 0.5,
     },
     headStyles: {
       fillColor: [255, 106, 0], // Neon orange
       textColor: [255, 255, 255],
-      fontStyle: 'bold',
+      fontStyle: 'bolditalic',
     },
     alternateRowStyles: {
-      fillColor: [21, 32, 51],
+      fillColor: isLight ? [241, 245, 249] : [21, 32, 51], // #F1F5F9 or #152033
     },
     margin: { left: 14, right: 14 },
     willDrawPage: function() {
@@ -295,7 +335,7 @@ export function exportSeasonStatsToPDF(stats: any[]) {
       if (data.row.raw[0] === 'TEAM TOTAAL') {
         data.cell.styles.fillColor = [255, 106, 0];
         data.cell.styles.textColor = [255, 255, 255];
-        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fontStyle = 'bolditalic';
       }
     }
   });

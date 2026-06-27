@@ -2625,7 +2625,7 @@ export default function App() {
           </h2>
           {stats.length > 0 && (
             <button 
-              onClick={() => exportSeasonStatsToPDF(stats)}
+              onClick={() => exportSeasonStatsToPDF(stats, theme)}
               className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-4 py-2 rounded-xl text-xs sm:text-sm font-black italic uppercase font-display transition-all active:scale-95 border border-primary/20 shadow-lg shadow-primary/5"
             >
               <Download size={16} /> <span className="hidden xs:inline">PDF Export</span>
@@ -3227,7 +3227,7 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
-                    onClick={() => exportMatchToPDF(selectedMatch)}
+                    onClick={() => exportMatchToPDF(selectedMatch, theme)}
                     className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all active:scale-95"
                   >
                     <Download size={16} className="sm:w-[18px] sm:h-[18px]" /> <span className="hidden xs:inline">PDF</span>

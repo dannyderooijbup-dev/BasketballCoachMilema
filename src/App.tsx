@@ -952,13 +952,17 @@ export default function App() {
     }
   }, [tick, gameClockRunning, matchClockStartTime, isMatchActive, currentPeriod, periodElapsed]);
 
-  const addPlayer = async (name: string, number: string, position: string, teamIdToAssociate?: string) => {
+  const addPlayer = async (name: string, number: string, position: string, teamIdsToAssociate?: string[]) => {
     if (!currentUser) return;
     
-    const targetTeamId = teamIdToAssociate || (activeTeamId !== 'all' ? activeTeamId : null);
-    if (targetTeamId && isJerseyNumberTakenInTeam(number, targetTeamId)) {
-      alert(`Kan speler niet aanmaken: rugnummer #${number} is al in gebruik binnen dit team!`);
-      return;
+    // Check jersey number in all selected teams
+    const targetTeamIds = teamIdsToAssociate || (activeTeamId !== 'all' ? [activeTeamId] : []);
+    for (const tId of targetTeamIds) {
+      if (isJerseyNumberTakenInTeam(number, tId)) {
+        const teamName = teams.find(t => t.id === tId)?.name || 'het team';
+        alert(`Kan speler niet aanmaken: rugnummer #${number} is al in gebruik binnen ${teamName}!`);
+        return;
+      }
     }
 
     const newPlayerId = generateId();
@@ -986,26 +990,29 @@ export default function App() {
         createdAt: Date.now()
       });
 
-      let newMapping: TeamPlayer | null = null;
+      const newMappings: TeamPlayer[] = [];
 
-      if (targetTeamId) {
-        const mappingId = generateId();
-        newMapping = {
-          id: mappingId,
-          teamId: targetTeamId,
-          playerId: newPlayerId,
-          createdAt: Date.now()
-        };
-        const mappingDocRef = doc(db, 'teamPlayers', mappingId);
-        batch.set(mappingDocRef, newMapping);
+      if (targetTeamIds.length > 0) {
+        targetTeamIds.forEach(tId => {
+          const mappingId = generateId();
+          const newMapping = {
+            id: mappingId,
+            teamId: tId,
+            playerId: newPlayerId,
+            createdAt: Date.now()
+          };
+          newMappings.push(newMapping);
+          const mappingDocRef = doc(db, 'teamPlayers', mappingId);
+          batch.set(mappingDocRef, newMapping);
+        });
       }
 
       await batch.commit();
 
       // Update React State
       setPlayers(prev => [...prev, newPlayer]);
-      if (newMapping) {
-        setTeamPlayers(prev => [...prev, newMapping!]);
+      if (newMappings.length > 0) {
+        setTeamPlayers(prev => [...prev, ...newMappings]);
       }
     } catch (err) {
       console.error("Fout bij het toevoegen van speler via Firestore:", err);
@@ -2381,7 +2388,10 @@ export default function App() {
       <div className="flex justify-between items-center bg-surface/50 p-4 rounded-2xl border border-white/5 backdrop-blur-sm">
         <h2 className="text-xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">Spelerslijst</h2>
         <button 
-          onClick={() => setShowAddPlayerModal(true)}
+          onClick={() => {
+            setNewPlayerSelectedTeams(activeTeamId !== 'all' ? [activeTeamId] : []);
+            setShowAddPlayerModal(true);
+          }}
           className="bg-primary text-white p-2.5 sm:px-6 sm:py-3 rounded-xl font-display font-black uppercase italic tracking-tighter shadow-lg shadow-primary/20 flex items-center gap-2 active:scale-95 transition-all text-xs sm:text-base"
         >
           <Plus size={18} /> <span className="hidden xs:inline">Nieuwe</span> Speler
@@ -2399,7 +2409,10 @@ export default function App() {
                 : 'Dit team heeft nog geen gekoppelde spelers. Gebruik het "Teams" tabblad om spelers te koppelen of voeg hier een nieuwe toe.'}
             </p>
             <button 
-              onClick={() => setShowAddPlayerModal(true)}
+              onClick={() => {
+                setNewPlayerSelectedTeams(activeTeamId !== 'all' ? [activeTeamId] : []);
+                setShowAddPlayerModal(true);
+              }}
               className="mt-5 bg-primary/25 border border-primary/20 text-primary hover:bg-primary/40 font-display font-medium text-xs uppercase italic tracking-widest py-2.5 px-6 rounded-lg transition-all active:scale-95 shadow"
             >
               Nieuwe Speler Toevoegen
@@ -2583,6 +2596,7 @@ export default function App() {
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerNumber, setNewPlayerNumber] = useState('');
   const [newPlayerPosition, setNewPlayerPosition] = useState('Guard');
+  const [newPlayerSelectedTeams, setNewPlayerSelectedTeams] = useState<string[]>([]);
 
   const updatePlayer = async (id: string, name: string, number: string, position: string) => {
     if (!currentUser) return;
@@ -2638,10 +2652,10 @@ export default function App() {
         
         <div className="hidden md:flex bg-surface rounded-2xl p-1 border border-white/5 backdrop-blur-sm self-center shadow-lg">
           <TabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Timer size={18} />} label="Match" />
-          <TabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={18} />} label="Teams" />
           <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={18} />} label="Historie" />
           <TabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={18} />} label="Seizoen" />
           <TabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={18} />} label="Spelers" />
+          <TabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={18} />} label="Teams" />
           <TabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={18} />} label="Account" />
         </div>
 
@@ -2751,10 +2765,10 @@ export default function App() {
       {/* Mobile Nav */}
       <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-surface py-3 px-2 flex justify-around items-center z-[100] border-t border-white/5 shadow-[0_-10px_40px_rgba(0,0,0,0.4)]">
         <MobileTabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Activity size={20} />} label="Live" />
-        <MobileTabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={20} />} label="Teams" />
         <MobileTabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={20} />} label="Historie" />
         <MobileTabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={20} />} label="Stats" />
         <MobileTabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={20} />} label="Team" />
+        <MobileTabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={20} />} label="Teams" />
         <MobileTabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={20} />} label="Account" />
       </nav>
 
@@ -2927,21 +2941,59 @@ export default function App() {
                     </select>
                   </div>
                 </div>
-                {newPlayerNumber.trim() !== '' && activeTeamId !== 'all' && isJerseyNumberTakenInTeam(newPlayerNumber, activeTeamId) && (
+                {teams.length > 0 && (
+                  <div>
+                    <label className="block text-sm text-text-muted mb-2 uppercase font-medium">Direct koppelen aan Teams</label>
+                    <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto bg-dark p-3 rounded-xl border border-white/10">
+                      {teams.map(team => {
+                        const isSelected = newPlayerSelectedTeams.includes(team.id);
+                        const isTaken = newPlayerNumber.trim() !== '' && isJerseyNumberTakenInTeam(newPlayerNumber, team.id);
+                        
+                        return (
+                          <label 
+                            key={team.id} 
+                            className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors text-xs select-none ${
+                              isTaken ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white/5'
+                            }`}
+                          >
+                            <input 
+                              type="checkbox"
+                              disabled={isTaken}
+                              checked={isSelected && !isTaken}
+                              onChange={() => {
+                                if (isTaken) return;
+                                setNewPlayerSelectedTeams(prev => 
+                                  prev.includes(team.id) 
+                                    ? prev.filter(id => id !== team.id)
+                                    : [...prev, team.id]
+                                );
+                              }}
+                              className="rounded border-white/10 text-primary focus:ring-primary bg-dark h-4 w-4"
+                            />
+                            <span className="truncate text-white font-medium">{team.name}</span>
+                            {isTaken && <span className="text-[9px] text-red-400 font-bold ml-auto">(# bezet)</span>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {newPlayerNumber.trim() !== '' && newPlayerSelectedTeams.some(tId => isJerseyNumberTakenInTeam(newPlayerNumber, tId)) && (
                   <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs font-semibold text-center">
-                    Rugnummer {newPlayerNumber} is al in gebruik binnen dit team!
+                    Rugnummer {newPlayerNumber} is al in gebruik binnen een of meer geselecteerde teams!
                   </div>
                 )}
                 <button 
                   onClick={() => {
                     if (!newPlayerName.trim() || !newPlayerNumber) return;
-                    if (activeTeamId !== 'all' && isJerseyNumberTakenInTeam(newPlayerNumber, activeTeamId)) return;
-                    addPlayer(newPlayerName, newPlayerNumber, newPlayerPosition);
+                    if (newPlayerSelectedTeams.some(tId => isJerseyNumberTakenInTeam(newPlayerNumber, tId))) return;
+                    addPlayer(newPlayerName, newPlayerNumber, newPlayerPosition, newPlayerSelectedTeams);
                     setShowAddPlayerModal(false);
                     setNewPlayerName('');
                     setNewPlayerNumber('');
+                    setNewPlayerSelectedTeams([]);
                   }} 
-                  disabled={!newPlayerName.trim() || !newPlayerNumber || (activeTeamId !== 'all' && isJerseyNumberTakenInTeam(newPlayerNumber, activeTeamId))}
+                  disabled={!newPlayerName.trim() || !newPlayerNumber || newPlayerSelectedTeams.some(tId => isJerseyNumberTakenInTeam(newPlayerNumber, tId))}
                   className="w-full btn-primary disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                 >
                   Speler Opslaan
@@ -3042,7 +3094,6 @@ export default function App() {
                       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b border-white/5 pb-3">
                         <div>
                           <h4 className="font-display font-black uppercase italic tracking-tight text-md text-primary">TEAM TOTAAL (WEDSTRIJD)</h4>
-                          <p className="text-[10px] text-text-muted uppercase font-bold tracking-widest">{selectedMatch.players.length} Spelers ingezet</p>
                         </div>
                         <div className="text-left sm:text-right">
                           <span className="text-[10px] text-text-muted uppercase font-bold tracking-[0.1em] block">Totale Team Speeltijd</span>

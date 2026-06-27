@@ -43,12 +43,8 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
   
   // Stylized Match Title & Score
   doc.setFont('helvetica', 'bolditalic');
-  doc.setFontSize(18);
-  if (isLight) {
-    doc.setTextColor(15, 23, 42);
-  } else {
-    doc.setTextColor(255, 255, 255); // White
-  }
+  doc.setFontSize(22); // Larger font size
+  doc.setTextColor(255, 106, 0); // Primary orange for title text
   const scoreText = `${match.teamScore ?? 0} - ${match.opponentScore ?? 0}`;
   doc.text(`VS ${match.opponent.toUpperCase()}  (${scoreText})`, 14, 23);
   
@@ -169,8 +165,10 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
       fillColor: isLight ? [241, 245, 249] : [21, 32, 51], // #F1F5F9 or #152033
     },
     margin: { left: 14, right: 14 },
-    willDrawPage: function() {
-      paintPage();
+    willDrawPage: function(data: any) {
+      if (data.pageNumber !== 1) {
+        paintPage();
+      }
     },
     didParseCell: function (data) {
       if (data.row.raw[0] === 'TEAM TOTAAL') {
@@ -219,12 +217,8 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
   
   // Stylized Season Title
   doc.setFont('helvetica', 'bolditalic');
-  doc.setFontSize(18);
-  if (isLight) {
-    doc.setTextColor(15, 23, 42);
-  } else {
-    doc.setTextColor(255, 255, 255); // White
-  }
+  doc.setFontSize(22); // Larger font size
+  doc.setTextColor(255, 106, 0); // Primary orange for title text
   doc.text('SEIZOENSSTATISTIEKEN', 14, 23);
   
   doc.setFont('helvetica', 'bolditalic');
@@ -344,8 +338,10 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
       fillColor: isLight ? [241, 245, 249] : [21, 32, 51], // #F1F5F9 or #152033
     },
     margin: { left: 14, right: 14 },
-    willDrawPage: function() {
-      paintPage();
+    willDrawPage: function(data: any) {
+      if (data.pageNumber !== 1) {
+        paintPage();
+      }
     },
     didParseCell: function (data) {
       if (data.row.raw[0] === 'TEAM TOTAAL') {

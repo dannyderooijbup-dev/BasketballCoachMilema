@@ -43,24 +43,24 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
   
   // Stylized Match Title & Score
   doc.setFont('helvetica', 'bolditalic');
-  doc.setFontSize(22); // Larger font size
-  doc.setTextColor(255, 106, 0); // Primary orange for title text
-  const scoreText = `${match.teamScore ?? 0} - ${match.opponentScore ?? 0}`;
-  doc.text(`VS ${match.opponent.toUpperCase()}  (${scoreText})`, 14, 23);
+  doc.setFontSize(24); // Enlarge main title font size
+  doc.setTextColor(255, 106, 0); // Primary bright orange for title text
+  doc.text('WEDSTRIJD EN UITSLAG', 14, 23);
   
   doc.setFont('helvetica', 'bolditalic');
-  doc.setFontSize(8.5);
+  doc.setFontSize(10);
   if (isLight) {
     doc.setTextColor(15, 23, 42);
   } else {
     doc.setTextColor(255, 255, 255); // White
   }
-  doc.text('OFFICIËLE WEDSTRIJD STATISTIEKEN', 14, 28);
+  const scoreText = `${match.teamScore ?? 0} - ${match.opponentScore ?? 0}`;
+  doc.text(`WEDSTRIJD TEGEN ${(match.opponent || 'ONBEKEND').toUpperCase()}  |  UITSLAG: ${scoreText}`, 14, 29);
 
   // Separator line
   doc.setDrawColor(255, 106, 0);
   doc.setLineWidth(0.5);
-  doc.line(14, 31, 196, 31);
+  doc.line(14, 32, 196, 32);
 
   // Calculate team total for this match
   let tTime = 0, tPtn = 0, tAst = 0, tReb = 0, tStl = 0, tBlk = 0, tTo = 0, tPf = 0, tPm = 0;
@@ -88,12 +88,12 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
   doc.setFontSize(9.5);
   if (isLight) {
     doc.setTextColor(71, 85, 105);
-    doc.text(`Datum: ${formatDate(match.date)}`, 14, 38);
-    doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}    |    Totale speeltijd spelers: ${formatTime(tTime)}`, 14, 44);
+    doc.text(`Datum: ${formatDate(match.date)}`, 14, 39);
+    doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}    |    Totale speeltijd spelers: ${formatTime(tTime)}`, 14, 45);
   } else {
     doc.setTextColor(255, 255, 255);
-    doc.text(`Datum: ${formatDate(match.date)}`, 14, 38);
-    doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}    |    Totale speeltijd spelers: ${formatTime(tTime)}`, 14, 44);
+    doc.text(`Datum: ${formatDate(match.date)}`, 14, 39);
+    doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}    |    Totale speeltijd spelers: ${formatTime(tTime)}`, 14, 45);
   }
 
   // Stats Table
@@ -143,7 +143,7 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
   ]);
 
   autoTable(doc, {
-    startY: 50,
+    startY: 51,
     head: [['Speler', 'Tijd', 'PTN', 'FG', '3P', 'FT', 'AST', 'REB', 'STL', 'BLK', 'TO', 'PF', '+/-']],
     body: tableData,
     theme: 'plain',

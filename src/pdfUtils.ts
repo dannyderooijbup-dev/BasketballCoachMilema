@@ -34,7 +34,11 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
   // Header Logo/Brand
   doc.setFont('helvetica', 'bolditalic');
   doc.setFontSize(11);
-  doc.setTextColor(255, 106, 0); // Primary orange
+  if (isLight) {
+    doc.setTextColor(255, 106, 0); // Primary orange
+  } else {
+    doc.setTextColor(255, 255, 255); // White
+  }
   doc.text('BASKETBALL COACH', 14, 15);
   
   // Stylized Match Title & Score
@@ -53,7 +57,7 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
   if (isLight) {
     doc.setTextColor(15, 23, 42);
   } else {
-    doc.setTextColor(255, 106, 0); // Primary orange
+    doc.setTextColor(255, 255, 255); // White
   }
   doc.text('OFFICIËLE WEDSTRIJD STATISTIEKEN', 14, 28);
 
@@ -69,19 +73,9 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
     doc.text(`Datum: ${formatDate(match.date)}`, 14, 38);
     doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}`, 14, 44);
   } else {
-    // Label "Datum:" in orange
-    doc.setTextColor(255, 106, 0);
-    doc.text('Datum:', 14, 38);
-    // Value in white
     doc.setTextColor(255, 255, 255);
-    doc.text(formatDate(match.date), 28, 38);
-
-    // Label "Wedstrijdduur:" in orange
-    doc.setTextColor(255, 106, 0);
-    doc.text('Wedstrijdduur:', 14, 44);
-    // Value in white
-    doc.setTextColor(255, 255, 255);
-    doc.text(formatTime(match.totalMatchTime), 42, 44);
+    doc.text(`Datum: ${formatDate(match.date)}`, 14, 38);
+    doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}`, 14, 44);
   }
 
   // Stats Table
@@ -216,7 +210,11 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
   // Header Logo/Brand
   doc.setFont('helvetica', 'bolditalic');
   doc.setFontSize(11);
-  doc.setTextColor(255, 106, 0); // Primary orange
+  if (isLight) {
+    doc.setTextColor(255, 106, 0); // Primary orange
+  } else {
+    doc.setTextColor(255, 255, 255); // White
+  }
   doc.text('BASKETBALL COACH', 14, 15);
   
   // Stylized Season Title
@@ -234,7 +232,7 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
   if (isLight) {
     doc.setTextColor(15, 23, 42);
   } else {
-    doc.setTextColor(255, 106, 0); // Primary orange
+    doc.setTextColor(255, 255, 255); // White
   }
   doc.text('OFFICIËLE SEIZOENSRAPPORTAGE', 14, 28);
 
@@ -249,12 +247,8 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
     doc.setTextColor(71, 85, 105);
     doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}`, 14, 38);
   } else {
-    // Label "Gegenereerd op:" in orange
-    doc.setTextColor(255, 106, 0);
-    doc.text('Gegenereerd op:', 14, 38);
-    // Value in white
     doc.setTextColor(255, 255, 255);
-    doc.text(new Date().toLocaleDateString('nl-NL'), 44, 38);
+    doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}`, 14, 38);
   }
 
   const totalTeamMatches = stats.length > 0 ? Math.max(...stats.map(s => s.matches || 0)) : 0;

@@ -73,15 +73,6 @@ export default function App() {
   const [activeTeamId, setActiveTeamId] = useState<string>('all');
   const [players, setPlayers] = useState<Player[]>([]);
 
-  const getFilteredPlayers = () => {
-    if (activeTeamId === 'all') return players;
-    const mappedPlayerIds = teamPlayers
-      .filter(tp => tp.teamId === activeTeamId)
-      .map(tp => tp.playerId);
-    return players.filter(p => mappedPlayerIds.includes(p.id));
-  };
-  const filteredPlayers = getFilteredPlayers();
-
   const getPlayersOfTeam = (teamId: string) => {
     if (teamId === 'all') return players;
     const mappedPlayerIds = teamPlayers
@@ -91,22 +82,11 @@ export default function App() {
   };
 
   const isJerseyNumberTakenInTeam = (number: string, teamId: string, excludePlayerId?: string) => {
-    if (teamId === 'all') return false;
-    const teamPlayerIds = teamPlayers
-      .filter(tp => tp.teamId === teamId && tp.playerId !== excludePlayerId)
-      .map(tp => tp.playerId);
-    return players.some(p => p.id !== excludePlayerId && teamPlayerIds.includes(p.id) && p.number.trim() === number.trim());
+    return false;
   };
 
   const isJerseyNumberConflictingForPlayer = (newNumber: string, playerId: string) => {
-    const pTeamIds = teamPlayers
-      .filter(tp => tp.playerId === playerId)
-      .map(tp => tp.teamId);
-    if (pTeamIds.length === 0) return false;
-    const teammateIds = teamPlayers
-      .filter(tp => pTeamIds.includes(tp.teamId) && tp.playerId !== playerId)
-      .map(tp => tp.playerId);
-    return players.some(p => teammateIds.includes(p.id) && p.number.trim() === newNumber.trim());
+    return false;
   };
 
   const getTeamBgColorClass = (teamId: string) => {
@@ -148,6 +128,8 @@ export default function App() {
   const [showMatchStartModal, setShowMatchStartModal] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<MatchHistoryEntry | null>(null);
   const [selectedStarters, setSelectedStarters] = useState<string[]>([]);
+  const [matchInactivePlayerIds, setMatchInactivePlayerIds] = useState<string[]>([]);
+  const [playerSearchQuery, setPlayerSearchQuery] = useState<{ [teamId: string]: string }>({});
 
   // Game Clock
   const [gameClockRunning, setGameClockRunning] = useState(false);
@@ -164,6 +146,21 @@ export default function App() {
 
   // Interval for live timer re-renders
   const [tick, setTick] = useState(0);
+
+  const getFilteredPlayers = () => {
+    let list = players;
+    if (activeTeamId !== 'all') {
+      const mappedPlayerIds = teamPlayers
+        .filter(tp => tp.teamId === activeTeamId)
+        .map(tp => tp.playerId);
+      list = players.filter(p => mappedPlayerIds.includes(p.id));
+    }
+    if (isMatchActive && matchInactivePlayerIds.length > 0) {
+      list = list.filter(p => !matchInactivePlayerIds.includes(p.id));
+    }
+    return list;
+  };
+  const filteredPlayers = getFilteredPlayers();
 
   const getLivePeriodElapsedTime = () => {
     let elapsed = periodElapsed[currentPeriod] || 0;
@@ -1526,13 +1523,28 @@ export default function App() {
     });
 
     const finalMatchTime = getTotalMatchDuration();
-    const teamScore = finalPlayers.reduce((sum, p) => sum + (p.stats.points || 0), 0);
+    
+    const activeTeamPlayerIds = matchTeamId
+      ? teamPlayers.filter(tp => tp.teamId === matchTeamId).map(tp => tp.playerId)
+      : null;
+
+    const matchSpecificPlayers = finalPlayers.filter(p => {
+      if (activeTeamPlayerIds && !activeTeamPlayerIds.includes(p.id)) {
+        return false;
+      }
+      if (matchInactivePlayerIds.includes(p.id)) {
+        return false;
+      }
+      return true;
+    });
+
+    const teamScore = matchSpecificPlayers.reduce((sum, p) => sum + (p.stats.points || 0), 0);
 
     const newEntry: MatchHistoryEntry = {
       matchId: generateId(),
       date: now,
       opponent,
-      players: finalPlayers,
+      players: matchSpecificPlayers,
       totalMatchTime: finalMatchTime,
       starting5: currentStarting5,
       teamId: matchTeamId || undefined,
@@ -1717,20 +1729,18 @@ export default function App() {
                 <div className="space-y-2 mt-auto">
                   <div className="bg-dark/40 p-3 rounded-xl border border-white/5">
                     <label className="block text-[10px] text-text-muted uppercase font-bold tracking-wider mb-2">Bestaande speler koppelen</label>
-                    <div className="flex gap-2">
+                    <div className="space-y-2">
+                      <input 
+                        type="text"
+                        placeholder="Zoek speler..."
+                        value={playerSearchQuery[team.id] || ''}
+                        onChange={(e) => setPlayerSearchQuery(prev => ({ ...prev, [team.id]: e.target.value }))}
+                        className="w-full bg-dark text-white border border-white/10 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary placeholder:text-text-muted/50"
+                      />
                       <select
                         onChange={(e) => {
                           const pId = e.target.value;
                           if (pId) {
-                            const playerToLink = players.find(p => p.id === pId);
-                            if (playerToLink) {
-                              const hasNumberConflict = teamRelatedPlayers.some(p => p.number.trim() === playerToLink.number.trim());
-                              if (hasNumberConflict) {
-                                alert(`Kan speler niet koppelen: er is al een teamgenoot met rugnummer #${playerToLink.number} in het team "${team.name}"!`);
-                                e.target.value = '';
-                                return;
-                              }
-                            }
                             const mappingId = generateId();
                             const mapping: TeamPlayer = {
                               id: mappingId,
@@ -1741,6 +1751,7 @@ export default function App() {
                             setDoc(doc(db, 'teamPlayers', mappingId), mapping)
                               .then(() => {
                                 setTeamPlayers(prev => [...prev, mapping]);
+                                setPlayerSearchQuery(prev => ({ ...prev, [team.id]: '' })); // Clear search after adding
                               })
                               .catch(err => console.error("Koppelen mislukt:", err));
                           }
@@ -1751,9 +1762,14 @@ export default function App() {
                         <option value="">Selecteer speler...</option>
                         {players
                           .filter(p => !teamRelatedPlayers.some(tp => tp.playerId === p.id))
+                          .filter(p => {
+                            const q = (playerSearchQuery[team.id] || '').toLowerCase();
+                            if (!q) return true;
+                            return p.name.toLowerCase().includes(q) || p.number.toLowerCase().includes(q);
+                          })
                           .map(p => (
                             <option key={p.id} value={p.id}>
-                              #{p.number} - {p.name}
+                              {p.name} ({p.number})
                             </option>
                           ))
                         }
@@ -1877,6 +1893,8 @@ export default function App() {
             <button 
               onClick={() => {
                 setSelectedStarters([]);
+                setMatchInactivePlayerIds([]);
+                setSelectedMatchTeamId(activeTeamId !== 'all' ? activeTeamId : '');
                 setOpponent('');
                 setShowMatchStartModal(true);
               }} 
@@ -2225,7 +2243,9 @@ export default function App() {
 
     return (
       <div className="space-y-6">
-        <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">Wedstrijdhistorie</h2>
+        <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">
+          Wedstrijdhistorie{teams.length > 0 && ` - ${activeTeamId === 'all' ? 'Alle spelers' : (teams.find(t => t.id === activeTeamId)?.name || 'Alle spelers')}`}
+        </h2>
 
         {filteredHistory.length > 0 && (() => {
           const hTotals = {
@@ -2386,7 +2406,9 @@ export default function App() {
   const renderPlayers = () => (
     <div className="space-y-6">
       <div className="flex justify-between items-center bg-surface/50 p-4 rounded-2xl border border-white/5 backdrop-blur-sm">
-        <h2 className="text-xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">Spelerslijst</h2>
+        <h2 className="text-xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">
+          Spelerslijst{teams.length > 0 && ` - ${activeTeamId === 'all' ? 'Alle spelers' : (teams.find(t => t.id === activeTeamId)?.name || 'Alle spelers')}`}
+        </h2>
         <button 
           onClick={() => {
             setNewPlayerSelectedTeams(activeTeamId !== 'all' ? [activeTeamId] : []);
@@ -2471,7 +2493,9 @@ export default function App() {
     return (
       <div className="space-y-6">
         <div className="flex justify-between items-center bg-surface/50 p-4 rounded-2xl border border-white/5 backdrop-blur-sm">
-          <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">Seizoensstatistieken</h2>
+          <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">
+            Seizoensstatistieken{teams.length > 0 && ` - ${activeTeamId === 'all' ? 'Alle spelers' : (teams.find(t => t.id === activeTeamId)?.name || 'Alle spelers')}`}
+          </h2>
           {stats.length > 0 && (
             <button 
               onClick={() => exportSeasonStatsToPDF(stats)}
@@ -2842,39 +2866,90 @@ export default function App() {
                   ) : (
                     <div className="space-y-3">
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-text-muted uppercase font-bold tracking-wider font-display">Basisopstelling (Starting 5)</span>
+                        <span className="text-text-muted uppercase font-bold tracking-wider font-display">Spelers (Kies status & starting 5)</span>
                         <span className={`font-black uppercase tracking-widest ${selectedStarters.length === 5 ? 'text-primary' : 'text-white/60'}`}>
-                          {selectedStarters.length} / 5
+                          Starters: {selectedStarters.length} / 5
                         </span>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar bg-dark/40 p-2 rounded-xl border border-white/5">
+                      <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar bg-dark/40 p-2.5 rounded-xl border border-white/5">
                         {modalPlayers.map(p => {
-                          const isSelected = selectedStarters.includes(p.id);
+                          const isInactive = matchInactivePlayerIds.includes(p.id);
+                          const isStarter = selectedStarters.includes(p.id);
+                          
                           return (
-                            <button
-                              key={p.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedStarters(prev => {
-                                  if (prev.includes(p.id)) {
-                                    return prev.filter(id => id !== p.id);
-                                  } else {
-                                    if (prev.length >= 5) return prev;
-                                    return [...prev, p.id];
-                                  }
-                                });
-                              }}
-                              className={`flex items-center gap-2 p-2.5 rounded-xl text-left border transition-all text-xs ${
-                                isSelected 
-                                  ? 'bg-primary/20 border-primary text-white font-bold' 
-                                  : 'bg-surface border-white/5 text-text-muted hover:border-white/10 hover:text-white'
+                            <div 
+                              key={p.id} 
+                              className={`flex items-center justify-between p-2.5 rounded-xl border transition-all text-xs ${
+                                isInactive 
+                                  ? 'bg-red-500/5 border-red-500/10 opacity-60' 
+                                  : isStarter 
+                                    ? 'bg-primary/10 border-primary/45' 
+                                    : 'bg-surface border-white/5'
                               }`}
                             >
-                              <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] flex-shrink-0 ${isSelected ? 'bg-primary text-white font-black' : 'bg-white/5 text-text-muted'}`}>
-                                #{p.number}
-                              </span>
-                              <span className="truncate">{p.name}</span>
-                            </button>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] flex-shrink-0 ${
+                                  isInactive 
+                                    ? 'bg-red-500/20 text-red-400' 
+                                    : isStarter 
+                                      ? 'bg-primary text-white font-black' 
+                                      : 'bg-white/5 text-text-muted'
+                                }`}>
+                                  #{p.number}
+                                </span>
+                                <span className={`truncate font-medium ${isInactive ? 'text-red-300/60 line-through' : 'text-white/90'}`}>
+                                  {p.name}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {/* Active / Inactive Status toggle */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMatchInactivePlayerIds(prev => {
+                                      if (prev.includes(p.id)) {
+                                        return prev.filter(id => id !== p.id);
+                                      } else {
+                                        setSelectedStarters(starters => starters.filter(id => id !== p.id));
+                                        return [...prev, p.id];
+                                      }
+                                    });
+                                  }}
+                                  className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider transition-all select-none cursor-pointer ${
+                                    isInactive 
+                                      ? 'bg-red-500/20 text-red-400 border border-red-500/25 hover:bg-red-500/30' 
+                                      : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/15 hover:bg-emerald-500/25'
+                                  }`}
+                                >
+                                  {isInactive ? 'Niet Actief' : 'Actief'}
+                                </button>
+
+                                {/* Starter toggle */}
+                                <button
+                                  type="button"
+                                  disabled={isInactive}
+                                  onClick={() => {
+                                    setSelectedStarters(prev => {
+                                      if (prev.includes(p.id)) {
+                                        return prev.filter(id => id !== p.id);
+                                      } else {
+                                        if (prev.length >= 5) return prev;
+                                        return [...prev, p.id];
+                                      }
+                                    });
+                                  }}
+                                  className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider transition-all select-none ${
+                                    isInactive 
+                                      ? 'bg-white/5 text-white/10 cursor-not-allowed opacity-30' 
+                                      : isStarter 
+                                        ? 'bg-primary text-white border border-primary/20 cursor-pointer shadow shadow-primary/30' 
+                                        : 'bg-white/5 text-text-muted border border-white/5 hover:border-white/10 hover:text-white cursor-pointer'
+                                  }`}
+                                >
+                                  Starten
+                                </button>
+                              </div>
+                            </div>
                           );
                         })}
                       </div>

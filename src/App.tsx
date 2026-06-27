@@ -2810,15 +2810,6 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
-            className="bg-surface/50 border border-white/5 rounded-2xl p-2 sm:p-2.5 flex items-center justify-center backdrop-blur-sm cursor-pointer hover:bg-surface/80 hover:border-white/10 transition-colors select-none text-white/80 hover:text-white"
-            title={theme === 'dark' ? 'Licht thema' : 'Donker thema'}
-            id="theme-toggle-btn"
-          >
-            {theme === 'dark' ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} className="text-indigo-400" />}
-          </button>
-
           <div 
             onClick={() => setActiveTab('account')}
             className={`bg-surface/50 border border-white/5 rounded-2xl px-3 py-1.5 flex items-center gap-2.5 backdrop-blur-sm text-xs cursor-pointer hover:bg-surface/80 hover:border-white/10 transition-colors select-none ${activeTab === 'account' ? 'ring-1 ring-primary/40 bg-surface/80' : ''}`}
@@ -2923,6 +2914,8 @@ export default function App() {
             newsletter={profileNewsletter}
             onSaveProfile={handleSaveProfile}
             onLogout={handleLogout}
+            theme={theme}
+            onThemeChange={setTheme}
           />
         )}
       </main>

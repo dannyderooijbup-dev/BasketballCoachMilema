@@ -21,7 +21,9 @@ import {
   AlertTriangle,
   Lock,
   Eye,
-  EyeOff
+  EyeOff,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -33,6 +35,8 @@ interface AccountScreenProps {
   newsletter: boolean;
   onSaveProfile: (profile: { name: string; club: string; role: string; newsletter: boolean }) => Promise<void>;
   onLogout: () => Promise<void>;
+  theme: 'dark' | 'light';
+  onThemeChange: (theme: 'dark' | 'light') => void;
 }
 
 export default function AccountScreen({
@@ -42,7 +46,9 @@ export default function AccountScreen({
   role,
   newsletter,
   onSaveProfile,
-  onLogout
+  onLogout,
+  theme,
+  onThemeChange
 }: AccountScreenProps) {
   // Local state for draft profile settings
   const [localName, setLocalName] = useState(name);
@@ -341,6 +347,73 @@ export default function AccountScreen({
 
         {/* Right Side: Password, Linking, Settings */}
         <div className="space-y-8">
+          
+          {/* Theme Selection Panel */}
+          <div className="bg-surface/55 border border-white/5 shadow-xl rounded-3xl p-6 sm:p-8 space-y-5">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <Sun size={18} className="text-primary" />
+              Weergave & Thema
+            </h3>
+            <p className="text-xs text-text-muted">
+              Pas de weergave van de coach-app aan naar jouw voorkeur.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              {/* Dark Theme Option */}
+              <button
+                type="button"
+                onClick={() => onThemeChange('dark')}
+                className={`flex flex-col items-center justify-center p-5 rounded-2xl border text-center transition-all duration-200 cursor-pointer select-none group relative ${
+                  theme === 'dark'
+                    ? 'bg-primary/10 border-primary shadow-lg shadow-primary/5'
+                    : 'bg-dark/40 border-white/5 hover:border-white/10 hover:bg-dark/65'
+                }`}
+              >
+                <div className={`p-3 rounded-full mb-3 transition-colors ${
+                  theme === 'dark' ? 'bg-primary/20 text-primary' : 'bg-white/5 text-text-muted group-hover:text-white'
+                }`}>
+                  <Moon size={22} />
+                </div>
+                <span className={`text-xs font-bold tracking-wide uppercase font-display ${
+                  theme === 'dark' ? 'text-white' : 'text-text-muted group-hover:text-white'
+                }`}>
+                  Donker (Dark)
+                </span>
+                {theme === 'dark' && (
+                  <div className="absolute top-2.5 right-2.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
+                    <Check size={10} className="text-white font-black" />
+                  </div>
+                )}
+              </button>
+
+              {/* Light Theme Option */}
+              <button
+                type="button"
+                onClick={() => onThemeChange('light')}
+                className={`flex flex-col items-center justify-center p-5 rounded-2xl border text-center transition-all duration-200 cursor-pointer select-none group relative ${
+                  theme === 'light'
+                    ? 'bg-primary/10 border-primary shadow-lg shadow-primary/5'
+                    : 'bg-dark/40 border-white/5 hover:border-white/10 hover:bg-dark/65'
+                }`}
+              >
+                <div className={`p-3 rounded-full mb-3 transition-colors ${
+                  theme === 'light' ? 'bg-primary/20 text-primary' : 'bg-white/5 text-text-muted group-hover:text-white'
+                }`}>
+                  <Sun size={22} />
+                </div>
+                <span className={`text-xs font-bold tracking-wide uppercase font-display ${
+                  theme === 'light' ? 'text-white' : 'text-text-muted group-hover:text-white'
+                }`}>
+                  Licht (Light)
+                </span>
+                {theme === 'light' && (
+                  <div className="absolute top-2.5 right-2.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
+                    <Check size={10} className="text-white font-black" />
+                  </div>
+                )}
+              </button>
+            </div>
+          </div>
           
           {/* Change Password Panel */}
           <div className="bg-surface/55 border border-white/5 shadow-xl rounded-3xl p-6 sm:p-8 space-y-6">

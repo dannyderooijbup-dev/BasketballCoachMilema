@@ -31,44 +31,46 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
   // Paint the first page
   paintPage();
   
-  // Header
+  // Header Logo/Brand
   doc.setFont('helvetica', 'bolditalic');
-  doc.setFontSize(22);
+  doc.setFontSize(11);
   doc.setTextColor(255, 106, 0); // Primary orange
-  doc.text('BASKETBALL COACH', 14, 20);
+  doc.text('BASKETBALL COACH', 14, 15);
+  
+  // Stylized Match Title & Score
+  doc.setFont('helvetica', 'bolditalic');
+  doc.setFontSize(18);
+  if (isLight) {
+    doc.setTextColor(15, 23, 42);
+  } else {
+    doc.setTextColor(255, 255, 255);
+  }
+  const scoreText = `${match.teamScore ?? 0} - ${match.opponentScore ?? 0}`;
+  doc.text(`VS ${match.opponent.toUpperCase()}  (${scoreText})`, 14, 23);
   
   doc.setFont('helvetica', 'italic');
-  doc.setFontSize(9);
+  doc.setFontSize(8);
   if (isLight) {
     doc.setTextColor(71, 85, 105); // Muted slate text
   } else {
     doc.setTextColor(148, 163, 184); // Muted slate text
   }
-  doc.text('OFFICIËLE WEDSTRIJD STATISTIEKEN', 14, 26);
+  doc.text('OFFICIËLE WEDSTRIJD STATISTIEKEN', 14, 28);
 
   // Separator line
   doc.setDrawColor(255, 106, 0);
   doc.setLineWidth(0.5);
-  doc.line(14, 30, 196, 30);
+  doc.line(14, 31, 196, 31);
 
-  doc.setFont('helvetica', 'bolditalic');
-  doc.setFontSize(14);
-  if (isLight) {
-    doc.setTextColor(15, 23, 42);
-  } else {
-    doc.setTextColor(255, 255, 255); // White text
-  }
-  doc.text(`Opponent: ${match.opponent}`, 14, 39);
-  
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   if (isLight) {
     doc.setTextColor(71, 85, 105);
   } else {
     doc.setTextColor(148, 163, 184);
   }
-  doc.text(`Datum: ${formatDate(match.date)}`, 14, 46);
-  doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}`, 14, 52);
+  doc.text(`Datum: ${formatDate(match.date)}`, 14, 38);
+  doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}`, 14, 44);
 
   // Stats Table
   const tableData = match.players.map(p => {
@@ -139,7 +141,7 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
   ]);
 
   autoTable(doc, {
-    startY: 58,
+    startY: 50,
     head: [['Speler', 'Tijd', 'PTN', 'FG', '3P', 'FT', 'AST', 'REB', 'STL', 'BLK', 'TO', 'PF', '+/-']],
     body: tableData,
     theme: 'plain',
@@ -199,43 +201,44 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
   // Paint the first page
   paintPage();
   
-  // Header
+  // Header Logo/Brand
   doc.setFont('helvetica', 'bolditalic');
-  doc.setFontSize(22);
+  doc.setFontSize(11);
   doc.setTextColor(255, 106, 0); // Primary orange
-  doc.text('BASKETBALL COACH', 14, 20);
+  doc.text('BASKETBALL COACH', 14, 15);
+  
+  // Stylized Season Title
+  doc.setFont('helvetica', 'bolditalic');
+  doc.setFontSize(18);
+  if (isLight) {
+    doc.setTextColor(15, 23, 42);
+  } else {
+    doc.setTextColor(255, 255, 255);
+  }
+  doc.text('SEIZOENSSTATISTIEKEN', 14, 23);
   
   doc.setFont('helvetica', 'italic');
-  doc.setFontSize(9);
+  doc.setFontSize(8);
   if (isLight) {
     doc.setTextColor(71, 85, 105); // Muted slate text
   } else {
     doc.setTextColor(148, 163, 184); // Muted slate text
   }
-  doc.text('OFFICIËLE SEIZOENSRAPPORTAGE', 14, 26);
+  doc.text('OFFICIËLE SEIZOENSRAPPORTAGE', 14, 28);
 
   // Separator line
   doc.setDrawColor(255, 106, 0);
   doc.setLineWidth(0.5);
-  doc.line(14, 30, 196, 30);
+  doc.line(14, 31, 196, 31);
 
-  doc.setFont('helvetica', 'bolditalic');
-  doc.setFontSize(14);
-  if (isLight) {
-    doc.setTextColor(15, 23, 42);
-  } else {
-    doc.setTextColor(255, 255, 255); // White text
-  }
-  doc.text('SEIZOENSSTATISTIEKEN (TEAM)', 14, 39);
-  
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   if (isLight) {
     doc.setTextColor(71, 85, 105);
   } else {
     doc.setTextColor(148, 163, 184);
   }
-  doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}`, 14, 46);
+  doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}`, 14, 38);
 
   const totalTeamMatches = stats.length > 0 ? Math.max(...stats.map(s => s.matches || 0)) : 0;
 
@@ -308,7 +311,7 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
   ]);
 
   autoTable(doc, {
-    startY: 54,
+    startY: 48,
     head: [['Speler', 'W', 'Tot. Tijd', 'PTN AVG', 'FG%', '3P%', 'FT%', 'REB AVG', 'AST AVG', 'STL AVG', 'BLK AVG', 'TO AVG', 'PF AVG', '+/-']],
     body: tableData,
     theme: 'plain',

@@ -62,16 +62,38 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
   doc.setLineWidth(0.5);
   doc.line(14, 31, 196, 31);
 
+  // Calculate team total for this match
+  let tTime = 0, tPtn = 0, tAst = 0, tReb = 0, tStl = 0, tBlk = 0, tTo = 0, tPf = 0, tPm = 0;
+  let tFgm = 0, tFga = 0, t3Fgm = 0, t3Fga = 0, tFtm = 0, tFta = 0;
+
+  match.players.forEach(p => {
+    tTime += p.totalTime || 0;
+    tPtn += p.stats.points || 0;
+    tAst += p.stats.assists || 0;
+    tReb += p.stats.rebounds || 0;
+    tStl += p.stats.steals || 0;
+    tBlk += p.stats.blocks || 0;
+    tTo += p.stats.turnovers || 0;
+    tPf += p.stats.pf || 0;
+    tPm += p.stats.plusMinus || 0;
+    tFgm += p.stats.fgm || 0;
+    tFga += p.stats.fga || 0;
+    t3Fgm += p.stats.threeFgm || 0;
+    t3Fga += p.stats.threeFga || 0;
+    tFtm += p.stats.ftm || 0;
+    tFta += p.stats.fta || 0;
+  });
+
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   if (isLight) {
     doc.setTextColor(71, 85, 105);
     doc.text(`Datum: ${formatDate(match.date)}`, 14, 38);
-    doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}`, 14, 44);
+    doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}    |    Totale speeltijd spelers: ${formatTime(tTime)}`, 14, 44);
   } else {
     doc.setTextColor(255, 255, 255);
     doc.text(`Datum: ${formatDate(match.date)}`, 14, 38);
-    doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}`, 14, 44);
+    doc.text(`Wedstrijdduur: ${formatTime(match.totalMatchTime)}    |    Totale speeltijd spelers: ${formatTime(tTime)}`, 14, 44);
   }
 
   // Stats Table
@@ -96,28 +118,6 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
       p.stats.pf || 0,
       pm
     ];
-  });
-
-  // Calculate team total for this match
-  let tTime = 0, tPtn = 0, tAst = 0, tReb = 0, tStl = 0, tBlk = 0, tTo = 0, tPf = 0, tPm = 0;
-  let tFgm = 0, tFga = 0, t3Fgm = 0, t3Fga = 0, tFtm = 0, tFta = 0;
-
-  match.players.forEach(p => {
-    tTime += p.totalTime || 0;
-    tPtn += p.stats.points || 0;
-    tAst += p.stats.assists || 0;
-    tReb += p.stats.rebounds || 0;
-    tStl += p.stats.steals || 0;
-    tBlk += p.stats.blocks || 0;
-    tTo += p.stats.turnovers || 0;
-    tPf += p.stats.pf || 0;
-    tPm += p.stats.plusMinus || 0;
-    tFgm += p.stats.fgm || 0;
-    tFga += p.stats.fga || 0;
-    t3Fgm += p.stats.threeFgm || 0;
-    t3Fga += p.stats.threeFga || 0;
-    tFtm += p.stats.ftm || 0;
-    tFta += p.stats.fta || 0;
   });
 
   const fgTotal = `${tFgm}/${tFga} (${calculatePercentage(tFgm, tFga)})`;
@@ -235,39 +235,6 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
   doc.setLineWidth(0.5);
   doc.line(14, 31, 196, 31);
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  if (isLight) {
-    doc.setTextColor(71, 85, 105);
-    doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}`, 14, 38);
-  } else {
-    doc.setTextColor(255, 255, 255);
-    doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}`, 14, 38);
-  }
-
-  const totalTeamMatches = stats.length > 0 ? Math.max(...stats.map(s => s.matches || 0)) : 0;
-
-  const tableData = stats.map(s => {
-    const pmVal = s.plusMinus || 0;
-    const pmStr = pmVal > 0 ? `+${pmVal}` : `${pmVal}`;
-    return [
-      `#${s.number} ${s.name}`,
-      s.matches,
-      formatTime(s.totalTime),
-      `${Math.round(s.points / s.matches)} avg`,
-      calculatePercentage(s.fgm, s.fga),
-      calculatePercentage(s.threeFgm, s.threeFga),
-      calculatePercentage(s.ftm, s.fta),
-      (s.rebounds / s.matches).toFixed(1),
-      (s.assists / s.matches).toFixed(1),
-      (s.steals / s.matches).toFixed(1),
-      (s.blocks / s.matches).toFixed(1),
-      (s.turnovers / s.matches).toFixed(1),
-      (s.pf / s.matches).toFixed(1),
-      pmStr
-    ];
-  });
-
   // Calculate season totals
   let totalTime = 0;
   let totalPtn = 0;
@@ -297,6 +264,39 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
 
   const finalTotalPm = customTotalPlusMinus !== undefined ? customTotalPlusMinus : totalPm;
   const totalPmStr = finalTotalPm > 0 ? `+${finalTotalPm}` : `${finalTotalPm}`;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  if (isLight) {
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}    |    Totale team speeltijd: ${formatTime(totalTime)}`, 14, 38);
+  } else {
+    doc.setTextColor(255, 255, 255);
+    doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}    |    Totale team speeltijd: ${formatTime(totalTime)}`, 14, 38);
+  }
+
+  const totalTeamMatches = stats.length > 0 ? Math.max(...stats.map(s => s.matches || 0)) : 0;
+
+  const tableData = stats.map(s => {
+    const pmVal = s.plusMinus || 0;
+    const pmStr = pmVal > 0 ? `+${pmVal}` : `${pmVal}`;
+    return [
+      `#${s.number} ${s.name}`,
+      s.matches,
+      formatTime(s.totalTime),
+      `${Math.round(s.points / s.matches)} avg`,
+      calculatePercentage(s.fgm, s.fga),
+      calculatePercentage(s.threeFgm, s.threeFga),
+      calculatePercentage(s.ftm, s.fta),
+      (s.rebounds / s.matches).toFixed(1),
+      (s.assists / s.matches).toFixed(1),
+      (s.steals / s.matches).toFixed(1),
+      (s.blocks / s.matches).toFixed(1),
+      (s.turnovers / s.matches).toFixed(1),
+      (s.pf / s.matches).toFixed(1),
+      pmStr
+    ];
+  });
 
   tableData.push([
     'TEAM TOTAAL',

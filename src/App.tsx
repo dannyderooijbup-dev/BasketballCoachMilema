@@ -2487,19 +2487,26 @@ export default function App() {
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
-                    <p className="text-[9px] sm:text-[10px] text-text-muted uppercase tracking-widest font-bold">{formatDate(match.date)}</p>
-                    <span className="text-[9px] sm:text-[10px] text-primary/60 font-black">•</span>
-                    <p className="text-[9px] sm:text-[10px] text-primary font-black uppercase italic tracking-widest">{formatTime(match.totalMatchTime)}</p>
-                    {match.teamId && teams.find(t => t.id === match.teamId) && (
-                      <>
+                  {(() => {
+                    const totalMatchPlayerTime = match.players.reduce((sum, p) => sum + (p.totalTime || 0), 0);
+                    return (
+                      <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
+                        <p className="text-[9px] sm:text-[10px] text-text-muted uppercase tracking-widest font-bold">{formatDate(match.date)}</p>
                         <span className="text-[9px] sm:text-[10px] text-primary/60 font-black">•</span>
-                        <span className="text-[9px] sm:text-[10px] font-black uppercase font-display bg-primary/10 text-primary py-0.5 px-2 rounded-md border border-primary/20">
-                          {teams.find(t => t.id === match.teamId)?.name}
-                        </span>
-                      </>
-                    )}
-                  </div>
+                        <p className="text-[9px] sm:text-[10px] text-primary font-black uppercase italic tracking-widest" title="Wedstrijdduur">{formatTime(match.totalMatchTime)}</p>
+                        <span className="text-[9px] sm:text-[10px] text-primary/60 font-black">•</span>
+                        <p className="text-[9px] sm:text-[10px] text-white font-mono font-bold" title="Totale speeltijd van alle spelers opgeteld">Speeltijd team: {formatTime(totalMatchPlayerTime)}</p>
+                        {match.teamId && teams.find(t => t.id === match.teamId) && (
+                          <>
+                            <span className="text-[9px] sm:text-[10px] text-primary/60 font-black">•</span>
+                            <span className="text-[9px] sm:text-[10px] font-black uppercase font-display bg-primary/10 text-primary py-0.5 px-2 rounded-md border border-primary/20">
+                              {teams.find(t => t.id === match.teamId)?.name}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
               <div className="flex items-center gap-2 sm:gap-4 text-right flex-shrink-0">

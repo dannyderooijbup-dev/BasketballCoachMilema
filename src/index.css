@@ -1,12 +1,24 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@700;900&display=swap');
 @import "tailwindcss";
 
-@theme {
-  --breakpoint-xs: 480px;
-  --color-primary: #FF6A00;
+:root {
   --color-dark: #0F172A;
   --color-surface: #1E293B;
   --color-text-muted: #94A3B8;
+}
+
+.light-theme {
+  --color-dark: #F8FAFC;
+  --color-surface: #FFFFFF;
+  --color-text-muted: #64748B;
+}
+
+@theme {
+  --breakpoint-xs: 480px;
+  --color-primary: #FF6A00;
+  --color-dark: var(--color-dark);
+  --color-surface: var(--color-surface);
+  --color-text-muted: var(--color-text-muted);
   
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Outfit", sans-serif;
@@ -14,8 +26,139 @@
 
 @layer base {
   body {
-    @apply bg-dark text-white font-sans;
+    @apply bg-dark text-white font-sans transition-colors duration-200;
   }
+}
+
+/* Light theme custom overrides for seamless style inversion */
+.light-theme {
+  color-scheme: light;
+}
+
+.light-theme body {
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
+}
+
+.light-theme .text-white {
+  color: #0F172A !important;
+}
+
+.light-theme .text-white\/90 {
+  color: #1E293B !important;
+}
+
+.light-theme .text-white\/80 {
+  color: #334155 !important;
+}
+
+.light-theme .text-white\/60 {
+  color: #475569 !important;
+}
+
+.light-theme .text-white\/40 {
+  color: #64748B !important;
+}
+
+.light-theme .border-white\/5 {
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+.light-theme .border-white\/10 {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+.light-theme .border-white\/2 {
+  border-color: rgba(15, 23, 42, 0.04) !important;
+}
+
+.light-theme .bg-white\/5 {
+  background-color: rgba(15, 23, 42, 0.05) !important;
+}
+
+.light-theme .bg-white\/2 {
+  background-color: rgba(15, 23, 42, 0.02) !important;
+}
+
+.light-theme .bg-white\/10 {
+  background-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+.light-theme .bg-dark\/40 {
+  background-color: rgba(15, 23, 42, 0.04) !important;
+}
+
+.light-theme .bg-dark\/30 {
+  background-color: rgba(15, 23, 42, 0.03) !important;
+}
+
+.light-theme .bg-dark\/95 {
+  background-color: rgba(248, 250, 252, 0.95) !important;
+}
+
+.light-theme .bg-dark\/80 {
+  background-color: rgba(248, 250, 252, 0.8) !important;
+}
+
+.light-theme .bg-dark {
+  background-color: #F8FAFC !important;
+}
+
+.light-theme .bg-surface {
+  background-color: #FFFFFF !important;
+}
+
+.light-theme .bg-surface\/50 {
+  background-color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.light-theme .bg-surface\/30 {
+  background-color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.light-theme .bg-surface\/80 {
+  background-color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.light-theme .bg-surface\/90 {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.light-theme .glass {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
+}
+
+.light-theme .shadow-2xl {
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.08) !important;
+}
+
+.light-theme .shadow-xl {
+  box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.06) !important;
+}
+
+.light-theme .text-slate-400 {
+  color: #475569 !important;
+}
+
+.light-theme .text-slate-200 {
+  color: #1E293B !important;
+}
+
+.light-theme .text-slate-300 {
+  color: #334155 !important;
+}
+
+.light-theme .text-slate-500 {
+  color: #64748B !important;
+}
+
+.light-theme .text-slate-700 {
+  color: #94A3B8 !important;
+}
+
+.light-theme th {
+  color: #475569 !important;
 }
 
 .glass {

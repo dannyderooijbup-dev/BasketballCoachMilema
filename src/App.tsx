@@ -24,7 +24,9 @@ import {
   LogOut,
   User as UserIcon,
   Shield,
-  Briefcase
+  Briefcase,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
@@ -58,6 +60,19 @@ export default function App() {
   const { currentUser, loading: loadingAuth, logout } = useAuth();
   const [loadingSync, setLoadingSync] = useState(false);
   const hasSyncedFromFirestore = useRef(false);
+
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('app-theme') as 'dark' | 'light') || 'dark';
+  });
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.documentElement.classList.add('light-theme');
+    } else {
+      document.documentElement.classList.remove('light-theme');
+    }
+    localStorage.setItem('app-theme', theme);
+  }, [theme]);
 
   const [profileName, setProfileName] = useState('');
   const [profileClub, setProfileClub] = useState('');
@@ -2790,12 +2805,20 @@ export default function App() {
           <TabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Timer size={18} />} label="Match" />
           <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={18} />} label="Historie" />
           <TabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={18} />} label="Seizoen" />
-          <TabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={18} />} label="Spelers" />
           <TabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={18} />} label="Teams" />
           <TabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={18} />} label="Account" />
         </div>
 
         <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+            className="bg-surface/50 border border-white/5 rounded-2xl p-2 sm:p-2.5 flex items-center justify-center backdrop-blur-sm cursor-pointer hover:bg-surface/80 hover:border-white/10 transition-colors select-none text-white/80 hover:text-white"
+            title={theme === 'dark' ? 'Licht thema' : 'Donker thema'}
+            id="theme-toggle-btn"
+          >
+            {theme === 'dark' ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} className="text-indigo-400" />}
+          </button>
+
           <div 
             onClick={() => setActiveTab('account')}
             className={`bg-surface/50 border border-white/5 rounded-2xl px-3 py-1.5 flex items-center gap-2.5 backdrop-blur-sm text-xs cursor-pointer hover:bg-surface/80 hover:border-white/10 transition-colors select-none ${activeTab === 'account' ? 'ring-1 ring-primary/40 bg-surface/80' : ''}`}
@@ -2881,10 +2904,16 @@ export default function App() {
 
       <main className="py-4">
         {activeTab === 'dashboard' && renderDashboard()}
-        {activeTab === 'teams' && renderTeams()}
+        {activeTab === 'teams' && (
+          <div className="space-y-12">
+            {renderTeams()}
+            <div className="border-t border-white/5 pt-10">
+              {renderPlayers()}
+            </div>
+          </div>
+        )}
         {activeTab === 'history' && renderHistory()}
         {activeTab === 'season' && renderSeason()}
-        {activeTab === 'players' && renderPlayers()}
         {activeTab === 'account' && (
           <AccountScreen
             currentUser={currentUser}
@@ -2903,7 +2932,6 @@ export default function App() {
         <MobileTabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<Activity size={20} />} label="Live" />
         <MobileTabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={20} />} label="Historie" />
         <MobileTabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={20} />} label="Stats" />
-        <MobileTabButton active={activeTab === 'players'} onClick={() => setActiveTab('players')} icon={<Users size={20} />} label="Team" />
         <MobileTabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={20} />} label="Teams" />
         <MobileTabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={20} />} label="Account" />
       </nav>

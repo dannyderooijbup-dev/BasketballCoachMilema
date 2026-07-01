@@ -280,20 +280,21 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
   const tableData = stats.map(s => {
     const pmVal = s.plusMinus || 0;
     const pmStr = pmVal > 0 ? `+${pmVal}` : `${pmVal}`;
+    const matches = s.matches || 0;
     return [
       `#${s.number} ${s.name}`,
-      s.matches,
-      formatTime(s.totalTime),
-      `${Math.round(s.points / s.matches)} avg`,
+      matches,
+      formatTime(matches > 0 ? s.totalTime / matches : 0),
+      matches > 0 ? (s.points / matches).toFixed(1) : '0.0',
       calculatePercentage(s.fgm, s.fga),
       calculatePercentage(s.threeFgm, s.threeFga),
       calculatePercentage(s.ftm, s.fta),
-      (s.rebounds / s.matches).toFixed(1),
-      (s.assists / s.matches).toFixed(1),
-      (s.steals / s.matches).toFixed(1),
-      (s.blocks / s.matches).toFixed(1),
-      (s.turnovers / s.matches).toFixed(1),
-      (s.pf / s.matches).toFixed(1),
+      matches > 0 ? (s.rebounds / matches).toFixed(1) : '0.0',
+      matches > 0 ? (s.assists / matches).toFixed(1) : '0.0',
+      matches > 0 ? (s.steals / matches).toFixed(1) : '0.0',
+      matches > 0 ? (s.blocks / matches).toFixed(1) : '0.0',
+      matches > 0 ? (s.turnovers / matches).toFixed(1) : '0.0',
+      matches > 0 ? (s.pf / matches).toFixed(1) : '0.0',
       pmStr
     ];
   });
@@ -301,8 +302,8 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
   tableData.push([
     'TEAM TOTAAL',
     totalTeamMatches,
-    formatTime(totalTime),
-    `${totalPtn} (avg ${totalTeamMatches > 0 ? Math.round(totalPtn / totalTeamMatches) : 0})`,
+    formatTime(totalTeamMatches > 0 ? totalTime / totalTeamMatches : 0),
+    totalTeamMatches > 0 ? (totalPtn / totalTeamMatches).toFixed(1) : '0.0',
     calculatePercentage(totalFgm, totalFga),
     calculatePercentage(total3Fgm, total3Fga),
     calculatePercentage(totalFtm, totalFta),
@@ -317,7 +318,7 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
 
   autoTable(doc, {
     startY: 48,
-    head: [['Speler', 'W', 'Tot. Tijd', 'PTN AVG', 'FG%', '3P%', 'FT%', 'REB AVG', 'AST AVG', 'STL AVG', 'BLK AVG', 'TO AVG', 'PF AVG', '+/-']],
+    head: [['Speler', 'W', 'Tijd AVG', 'PTN AVG', 'FG%', '3P%', 'FT%', 'REB AVG', 'AST AVG', 'STL AVG', 'BLK AVG', 'TO AVG', 'PF AVG', '+/-']],
     body: tableData,
     theme: 'plain',
     styles: {

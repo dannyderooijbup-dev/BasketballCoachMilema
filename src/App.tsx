@@ -2649,10 +2649,10 @@ export default function App() {
             <table className="w-full text-left border-collapse min-w-[900px]">
               <thead>
                 <tr className="bg-white/5 text-[9px] sm:text-[10px] uppercase tracking-widest text-text-muted border-b border-white/5 font-bold italic">
-                  <th className={`px-3 sm:px-4 py-3 sm:py-4 sticky left-0 sm:relative sm:bg-transparent z-10 transition-colors ${getTeamStickyBgColorClass(activeTeamId)}`}>Speler</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4 sticky left-0 sm:relative sm:bg-transparent z-10 transition-colors ${getTeamStickyBgColorClass(activeTeamId)}">Speler</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">W</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4">Tijd</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4">PTN</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4">Tijd AVG</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4">PTN AVG</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">FG%</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">3P%</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">FT%</th>
@@ -2674,9 +2674,9 @@ export default function App() {
                         <span className="font-medium text-xs sm:text-sm whitespace-nowrap">{s.name}</span>
                       </div>
                     </td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{s.matches}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{formatTime(s.totalTime)}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-bold text-primary text-xs sm:text-sm">{s.matches > 0 ? Math.round(s.points / s.matches) : 0} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{s.matches || 0}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{formatTime(s.matches > 0 ? s.totalTime / s.matches : 0)}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-bold text-primary text-xs sm:text-sm">{s.matches > 0 ? (s.points / s.matches).toFixed(1) : '0.0'}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.fgm, s.fga)}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.threeFgm, s.threeFga)}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.ftm, s.fta)}</td>
@@ -2722,9 +2722,9 @@ export default function App() {
                         </div>
                       </td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-primary">{totalW}</td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-primary">{formatTime(totalTime)}</td>
-                      <td className="px-3 sm:px-4 py-4 text-xs sm:text-sm">
-                        <span className="font-bold text-primary">{totalPoints}</span> <span className="text-[9px] text-text-muted font-normal italic">({totalW > 0 ? (totalPoints / totalW).toFixed(1) : '0.0'} avg)</span>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-primary">{formatTime(totalW > 0 ? totalTime / totalW : 0)}</td>
+                      <td className="px-3 sm:px-4 py-4 font-bold text-primary font-mono text-[11px] sm:text-sm">
+                        {totalW > 0 ? (totalPoints / totalW).toFixed(1) : '0.0'}
                       </td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(totalFgm, totalFga)}</td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(total3Fgm, total3Fga)}</td>

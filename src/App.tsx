@@ -2175,42 +2175,49 @@ export default function App() {
              </div>
              <div className="text-3xl sm:text-5xl font-mono font-black text-primary tracking-wider mt-1 sm:mt-2">
                {isEditingClock ? (
-                <div className="flex items-center gap-2 mt-1 sm:mt-2 text-base font-sans font-medium tracking-normal">
+                <div className="flex flex-wrap items-center gap-2 mt-1 sm:mt-2 text-base font-sans font-medium tracking-normal">
+                   {/* Inputs Group */}
+                   <div className="flex items-center gap-1.5">
                   <input 
-                    type="number" 
-                    min="0"
-                    max="99"
-                    value={editMin} 
-                    onChange={e => setEditMin(Math.max(0, parseInt(e.target.value) || 0))} 
-                    className="w-16 bg-dark/60 text-white font-mono text-xl sm:text-2xl p-1.5 text-center rounded border border-white/20 focus:outline-none focus:border-primary font-black"
-                    placeholder="Min"
-                    id="clock-min-input"
-                  />
-                  <span className="text-white text-xl font-bold">:</span>
-                  <input 
-                    type="number" 
-                    min="0"
-                    max="59"
-                    value={editSec} 
-                    onChange={e => setEditSec(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
-                    className="w-16 bg-dark/60 text-white font-mono text-xl sm:text-2xl p-1.5 text-center rounded border border-white/20 focus:outline-none focus:border-primary font-black"
-                    placeholder="Sec"
-                    id="clock-sec-input"
-                  />
-                  <button 
-                    onClick={saveClockCorrection}
-                    className="bg-primary hover:bg-primary/80 text-white text-xs font-black uppercase italic font-display px-3 py-2.5 rounded-lg transition-colors shadow active:scale-95"
-                    id="save-clock-btn"
-                  >
-                    Opslaan
-                  </button>
-                  <button 
-                    onClick={() => setIsEditingClock(false)}
-                    className="bg-white/10 hover:bg-white/20 text-text-muted text-xs font-black uppercase italic font-display px-2.5 py-2.5 rounded-lg transition-colors active:scale-95"
-                    id="cancel-clock-btn"
-                  >
-                    Annuleer
-                  </button>
+                      type="number" 
+                      min="0"
+                      max="99"
+                      value={editMin} 
+                      onChange={e => setEditMin(Math.max(0, parseInt(e.target.value) || 0))} 
+                      className="w-14 sm:w-16 bg-dark/60 text-white font-mono text-lg sm:text-xl p-1.5 sm:p-2 text-center rounded-lg border border-white/20 focus:outline-none focus:border-primary font-black"
+                      placeholder="Min"
+                      id="clock-min-input"
+                    />
+                    <span className="text-white text-lg sm:text-xl font-bold font-mono">:</span>
+                    <input 
+                      type="number" 
+                      min="0"
+                      max="59"
+                      value={editSec} 
+                      onChange={e => setEditSec(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
+                      className="w-14 sm:w-16 bg-dark/60 text-white font-mono text-lg sm:text-xl p-1.5 sm:p-2 text-center rounded-lg border border-white/20 focus:outline-none focus:border-primary font-black"
+                      placeholder="Sec"
+                      id="clock-sec-input"
+                    />
+                  </div>
+
+                  {/* Buttons Group */}
+                  <div className="flex items-center gap-1.5">
+                    <button 
+                      onClick={saveClockCorrection}
+                      className="bg-primary hover:bg-primary/80 text-white text-[11px] sm:text-xs font-black uppercase italic font-display px-3 py-2.5 sm:py-3 rounded-lg transition-colors shadow active:scale-95 whitespace-nowrap"
+                      id="save-clock-btn"
+                    >
+                      Opslaan
+                    </button>
+                    <button 
+                      onClick={() => setIsEditingClock(false)}
+                      className="bg-white/10 hover:bg-white/20 text-text-muted hover:text-white text-[11px] sm:text-xs font-black uppercase italic font-display px-2.5 py-2.5 sm:py-3 rounded-lg transition-colors active:scale-95 whitespace-nowrap"
+                      id="cancel-clock-btn"
+                    >
+                      Annuleer
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4">

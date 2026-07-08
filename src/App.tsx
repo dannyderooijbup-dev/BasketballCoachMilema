@@ -2213,32 +2213,12 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-3">
-                  <span className={getRemainingTime() === 0 && isMatchActive ? 'text-red-500 animate-pulse' : 'text-primary'}>
-                    {isMatchActive ? formatTime(getRemainingTime()) : '10:00'}
-                  </span>
-                  {isMatchActive && (
-                    <div className="flex items-center gap-1.5">
-                      {/* Mobile & tablet quick adjustments */}
-                      <div className="flex items-center gap-1 lg:hidden">
-                        <button 
-                          onClick={() => adjustClock(-60000)}
-                          className="flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 text-text-muted hover:text-white font-mono font-bold text-xs w-9 h-9 rounded-lg active:scale-90 transition-all select-none"
-                          title="-1 minuut"
-                          id="adjust-clock-minus"
-                        >
-                          -1m
-                        </button>
-                        <button 
-                          onClick={() => adjustClock(60000)}
-                          className="flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 text-text-muted hover:text-white font-mono font-bold text-xs w-9 h-9 rounded-lg active:scale-90 transition-all select-none"
-                          title="+1 minuut"
-                          id="adjust-clock-plus"
-                        >
-                          +1m
-                        </button>
-                      </div>
-
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className={getRemainingTime() === 0 && isMatchActive ? 'text-red-500 animate-pulse' : 'text-primary'}>
+                      {isMatchActive ? formatTime(getRemainingTime()) : '10:00'}
+                    </span>
+                    {isMatchActive && (
                       <button 
                         onClick={startClockEditing}
                         className="text-text-muted hover:text-primary transition-colors p-1.5 rounded hover:bg-white/5 active:scale-90"
@@ -2247,6 +2227,52 @@ export default function App() {
                       >
                         <Pencil size={18} />
                       </button>
+                    )}
+                  </div>
+
+                  {isMatchActive && (
+                    <div className="flex items-center gap-2 lg:hidden">
+                      {/* Minutes adjustment group */}
+                      <div className="flex items-center bg-white/5 rounded-xl p-0.5 border border-white/10 shadow-inner">
+                        <button 
+                          onClick={() => adjustClock(-60000)}
+                          className="flex items-center justify-center text-text-muted hover:text-white font-mono font-black text-xs w-9 h-8 rounded-lg hover:bg-white/5 active:scale-90 transition-all select-none"
+                          title="-1 minuut"
+                          id="adjust-clock-minus-1m"
+                        >
+                          -1m
+                        </button>
+                        <div className="h-4 w-px bg-white/10" />
+                        <button 
+                          onClick={() => adjustClock(60000)}
+                          className="flex items-center justify-center text-text-muted hover:text-white font-mono font-black text-xs w-9 h-8 rounded-lg hover:bg-white/5 active:scale-90 transition-all select-none"
+                          title="+1 minuut"
+                          id="adjust-clock-plus-1m"
+                        >
+                          +1m
+                        </button>
+                      </div>
+
+                      {/* Seconds adjustment group */}
+                      <div className="flex items-center bg-white/5 rounded-xl p-0.5 border border-white/10 shadow-inner">
+                        <button 
+                          onClick={() => adjustClock(-1000)}
+                          className="flex items-center justify-center text-text-muted hover:text-white font-mono font-black text-xs w-9 h-8 rounded-lg hover:bg-white/5 active:scale-90 transition-all select-none"
+                          title="-1 seconde"
+                          id="adjust-clock-minus-1s"
+                        >
+                          -1s
+                        </button>
+                        <div className="h-4 w-px bg-white/10" />
+                        <button 
+                          onClick={() => adjustClock(1000)}
+                          className="flex items-center justify-center text-text-muted hover:text-white font-mono font-black text-xs w-9 h-8 rounded-lg hover:bg-white/5 active:scale-90 transition-all select-none"
+                          title="+1 seconde"
+                          id="adjust-clock-plus-1s"
+                        >
+                          +1s
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

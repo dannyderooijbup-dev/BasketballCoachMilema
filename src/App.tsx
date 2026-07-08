@@ -401,6 +401,51 @@ export default function App() {
     setIsEditingClock(false);
   };
 
+  const adjustClock = (amountMs: number) => {
+    if (!isMatchActive) return;
+    const currentPeriodDuration = currentPeriod <= 4 ? 10 * 60 * 1000 : 5 * 60 * 1000;
+    const oldElapsedTime = getLivePeriodElapsedTime();
+    const currentRemaining = getRemainingTime();
+    const targetRemaining = Math.max(0, Math.min(currentPeriodDuration, currentRemaining + amountMs));
+    const newElapsedTime = currentPeriodDuration - targetRemaining;
+    const delta = newElapsedTime - oldElapsedTime;
+    const now = Date.now();
+
+    // 1. Update Period Elapsed state
+    setPeriodElapsed(prev => ({
+      ...prev,
+      [currentPeriod]: newElapsedTime
+    }));
+    
+    if (gameClockRunning) {
+      setMatchClockStartTime(now);
+    } else {
+      setMatchClockStartTime(null);
+    }
+
+    // 2. Update players timing (specifically active ones)
+    setPlayers(prev => prev.map(p => {
+      if (!p.isRunning) return p;
+
+      if (gameClockRunning) {
+        const playerLiveTime = p.lastStartTime ? p.totalTime + (now - p.lastStartTime) : p.totalTime;
+        const newPlayerTime = Math.max(0, playerLiveTime + delta);
+        return {
+          ...p,
+          totalTime: newPlayerTime,
+          lastStartTime: now
+        };
+      } else {
+        const newPlayerTime = Math.max(0, p.totalTime + delta);
+        return {
+          ...p,
+          totalTime: newPlayerTime,
+          lastStartTime: null
+        };
+      }
+    }));
+  };
+
   // Ref to persist state to localStorage only when it changes
   const initialLoadDone = useRef(false);
 
@@ -2173,14 +2218,36 @@ export default function App() {
                     {isMatchActive ? formatTime(getRemainingTime()) : '10:00'}
                   </span>
                   {isMatchActive && (
-                    <button 
-                      onClick={startClockEditing}
-                      className="text-text-muted hover:text-primary transition-colors p-1.5 rounded hover:bg-white/5 active:scale-90"
-                      title="Corrigeer wedstrijdklok"
-                      id="edit-clock-btn"
-                    >
-                      <Pencil size={18} />
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {/* Mobile & tablet quick adjustments */}
+                      <div className="flex items-center gap-1 lg:hidden">
+                        <button 
+                          onClick={() => adjustClock(-60000)}
+                          className="flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 text-text-muted hover:text-white font-mono font-bold text-xs w-9 h-9 rounded-lg active:scale-90 transition-all select-none"
+                          title="-1 minuut"
+                          id="adjust-clock-minus"
+                        >
+                          -1m
+                        </button>
+                        <button 
+                          onClick={() => adjustClock(60000)}
+                          className="flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 text-text-muted hover:text-white font-mono font-bold text-xs w-9 h-9 rounded-lg active:scale-90 transition-all select-none"
+                          title="+1 minuut"
+                          id="adjust-clock-plus"
+                        >
+                          +1m
+                        </button>
+                      </div>
+
+                      <button 
+                        onClick={startClockEditing}
+                        className="text-text-muted hover:text-primary transition-colors p-1.5 rounded hover:bg-white/5 active:scale-90"
+                        title="Corrigeer wedstrijdklok"
+                        id="edit-clock-btn"
+                      >
+                        <Pencil size={18} />
+                      </button>
+                    </div>
                   )}
                 </div>
               )}

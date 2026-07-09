@@ -379,4 +379,36 @@
   background-color: rgba(255, 106, 0, 0.2) !important;
 }
 
+/* Custom styling for all select dropdowns and options in both themes to match the app style */
+select {
+  font-family: "Outfit", sans-serif !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em;
+  background-color: #1E293B !important; /* var(--color-surface) in dark mode */
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+select option {
+  font-family: "Inter", sans-serif !important;
+  font-weight: 600 !important;
+  background-color: #1E293B !important; /* solid dark background */
+  color: #FFFFFF !important;
+}
+
+.light-theme select {
+  font-family: "Outfit", sans-serif !important;
+  font-weight: 700 !important;
+  color: #0F172A !important;
+  background-color: #FFFFFF !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+.light-theme select option {
+  font-family: "Inter", sans-serif !important;
+  font-weight: 600 !important;
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+}
+
 

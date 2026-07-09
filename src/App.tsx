@@ -227,6 +227,13 @@ export default function App() {
   const [seasonTabSeasonFilter, setSeasonTabSeasonFilter] = useState<string>('All');
   const [showMatchStartModal, setShowMatchStartModal] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<MatchHistoryEntry | null>(null);
+  const [detailSeason, setDetailSeason] = useState<string>('2026/2027');
+
+  useEffect(() => {
+    if (selectedMatch) {
+      setDetailSeason(selectedMatch.season || '2026/2027');
+    }
+  }, [selectedMatch]);
   const [selectedStarters, setSelectedStarters] = useState<string[]>([]);
   const [matchInactivePlayerIds, setMatchInactivePlayerIds] = useState<string[]>([]);
   const [playerSearchQuery, setPlayerSearchQuery] = useState<{ [teamId: string]: string }>({});
@@ -3433,17 +3440,27 @@ export default function App() {
                   <div className="flex flex-wrap items-center gap-2 mt-1">
                     <p className="text-text-muted text-[10px] uppercase tracking-[0.2em] font-bold">{formatDate(selectedMatch.date)}</p>
                     <span className="text-white/20 text-xs">•</span>
-                    <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-lg px-2 py-0.5">
-                      <span className="text-[9px] text-text-muted uppercase font-black tracking-wider">Seizoen:</span>
-                      <select
-                        value={selectedMatch.season || '2026/2027'}
-                        onChange={(e) => handleUpdateMatchSeason(selectedMatch.matchId, e.target.value)}
-                        className="bg-transparent border-none text-white text-[10px] font-bold cursor-pointer focus:outline-none py-0.5"
-                      >
-                        <option value="2026/2027">2026/2027</option>
-                        <option value="2025/2026">2025/2026</option>
-                        <option value="2024/2025">2024/2025</option>
-                      </select>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-lg px-2 py-0.5">
+                        <span className="text-[9px] text-text-muted uppercase font-black tracking-wider">Seizoen:</span>
+                        <select
+                          value={detailSeason}
+                          onChange={(e) => setDetailSeason(e.target.value)}
+                          className="bg-transparent border-none text-white text-[10px] font-bold cursor-pointer focus:outline-none py-0.5"
+                        >
+                          <option value="2026/2027">2026/2027</option>
+                          <option value="2025/2026">2025/2026</option>
+                          <option value="2024/2025">2024/2025</option>
+                        </select>
+                      </div>
+                      {detailSeason !== (selectedMatch.season || '2026/2027') && (
+                        <button
+                          onClick={() => handleUpdateMatchSeason(selectedMatch.matchId, detailSeason)}
+                          className="flex items-center gap-1 bg-primary hover:bg-primary/90 text-white text-[10px] font-black uppercase italic tracking-wider font-display px-2.5 py-1 rounded-lg transition-all active:scale-95 shadow-md shadow-primary/10"
+                        >
+                          Opslaan
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -56,7 +56,11 @@ export interface MatchHistoryEntry {
   teamId?: string;
   opponentScore?: number;
   teamScore?: number;
+  season?: string;
 }
+
+export const SEASONS = ['2026/2027', '2025/2026', '2024/2025'];
+export const DEFAULT_SEASON = '2026/2027';
 
 export type Tab = 'dashboard' | 'history' | 'players' | 'season' | 'account' | 'teams';
 

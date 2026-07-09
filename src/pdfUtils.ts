@@ -182,7 +182,7 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
   doc.save(`match_${match.opponent}_${new Date(match.date).toISOString().split('T')[0]}.pdf`);
 }
 
-export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = 'dark', customTotalPlusMinus?: number) {
+export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = 'dark', customTotalPlusMinus?: number, seasonFilter: string = 'All') {
   const doc = new jsPDF();
   const isLight = theme === 'light';
   
@@ -228,7 +228,10 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
   } else {
     doc.setTextColor(255, 255, 255); // White
   }
-  doc.text('OFFICIËLE SEIZOENSRAPPORTAGE', 14, 28);
+  const seasonText = seasonFilter && seasonFilter !== 'All' 
+    ? `OFFICIËLE SEIZOENSRAPPORTAGE - SEIZOEN ${seasonFilter}` 
+    : 'OFFICIËLE SEIZOENSRAPPORTAGE - ALLE SEIZOENEN';
+  doc.text(seasonText, 14, 28);
 
   // Separator line
   doc.setDrawColor(255, 106, 0);

@@ -28,7 +28,7 @@ import {
   Sun,
   Moon
 } from 'lucide-react';
-import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer } from './types';
+import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, SEASONS, DEFAULT_SEASON } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
 import { exportMatchToPDF, exportSeasonStatsToPDF } from './pdfUtils';
 import { User } from 'firebase/auth';
@@ -222,6 +222,9 @@ export default function App() {
   const [selectedMatchTeamId, setSelectedMatchTeamId] = useState<string>('');
   const [opponent, setOpponent] = useState('');
   const [opponentScore, setOpponentScore] = useState<number>(0);
+  const [matchSeason, setMatchSeason] = useState<string>(DEFAULT_SEASON);
+  const [historySeasonFilter, setHistorySeasonFilter] = useState<string>('All');
+  const [seasonTabSeasonFilter, setSeasonTabSeasonFilter] = useState<string>('All');
   const [showMatchStartModal, setShowMatchStartModal] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<MatchHistoryEntry | null>(null);
   const [selectedStarters, setSelectedStarters] = useState<string[]>([]);
@@ -579,6 +582,15 @@ export default function App() {
     }
 
     try {
+      const savedMatchSeason = localStorage.getItem('matchSeason');
+      if (savedMatchSeason && savedMatchSeason !== 'null' && savedMatchSeason !== 'undefined') {
+        setMatchSeason(savedMatchSeason);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    try {
       const savedMatchTeamId = localStorage.getItem('matchTeamId');
       if (savedMatchTeamId && savedMatchTeamId !== 'null' && savedMatchTeamId !== 'undefined') {
         setMatchTeamId(savedMatchTeamId);
@@ -778,6 +790,10 @@ export default function App() {
               setMatchTeamId(inst.matchTeamId);
               localStorage.setItem('matchTeamId', inst.matchTeamId || '');
             }
+            if (inst.matchSeason !== undefined) {
+              setMatchSeason(inst.matchSeason);
+              localStorage.setItem('matchSeason', inst.matchSeason || '');
+            }
           }
         } else {
           // Document does not exist (first login):
@@ -805,7 +821,8 @@ export default function App() {
               matchClockStartTime,
               globalActionsLog,
               currentStarting5,
-              matchTeamId
+              matchTeamId,
+              matchSeason
             }
           };
 
@@ -937,6 +954,7 @@ export default function App() {
     localStorage.setItem('matchClockStartTime', JSON.stringify(matchClockStartTime));
     localStorage.setItem('globalActionsLog', JSON.stringify(globalActionsLog));
     localStorage.setItem('currentStarting5', JSON.stringify(currentStarting5));
+    localStorage.setItem('matchSeason', matchSeason);
     localStorage.setItem('profileName', profileName);
     localStorage.setItem('profileClub', profileClub);
     localStorage.setItem('profileRole', profileRole);
@@ -965,12 +983,13 @@ export default function App() {
         matchClockStartTime,
         globalActionsLog,
         currentStarting5,
-        matchTeamId
+        matchTeamId,
+        matchSeason
       }
     }, { merge: true }).catch(err => {
       console.error("Fout bij opslaan naar Firestore:", err);
     });
-  }, [players, history, isMatchActive, matchTeamId, opponent, opponentScore, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5, currentUser, profileName, profileClub, profileRole, profileNewsletter]);
+  }, [players, history, isMatchActive, matchTeamId, matchSeason, opponent, opponentScore, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5, currentUser, profileName, profileClub, profileRole, profileNewsletter]);
 
   const handleSaveProfile = async (updatedData: { name: string; club: string; role: string; newsletter: boolean }) => {
     if (!currentUser) return;
@@ -1523,13 +1542,29 @@ export default function App() {
     }
   };
 
+  const handleUpdateMatchSeason = (matchId: string, newSeason: string) => {
+    const updatedHistory = history.map(m => {
+      if (m.matchId === matchId) {
+        return { ...m, season: newSeason };
+      }
+      return m;
+    });
+    setHistory(updatedHistory);
+    if (selectedMatch && selectedMatch.matchId === matchId) {
+      setSelectedMatch({ ...selectedMatch, season: newSeason });
+    }
+  };
+
   const seasonStats = useCallback(() => {
     const stats: Record<string, any> = {};
     
-    // Filter history matches if a specific team is active
-    const filteredMatches = activeTeamId === 'all' 
-      ? history 
-      : history.filter(m => m.teamId === activeTeamId);
+    // Filter history matches if a specific team and/or season is active
+    const filteredMatches = history.filter(m => {
+      const matchTeam = activeTeamId === 'all' || m.teamId === activeTeamId;
+      const matchSeasonVal = m.season || '2026/2027';
+      const matchSeasonMatch = seasonTabSeasonFilter === 'All' || matchSeasonVal === seasonTabSeasonFilter;
+      return matchTeam && matchSeasonMatch;
+    });
 
     // Get the playerIds belonging to this active team (if not 'all')
     const activeTeamPlayerIds = activeTeamId === 'all' 
@@ -1609,7 +1644,7 @@ export default function App() {
     }
 
     return Object.values(stats);
-  }, [history, activeTeamId, teamPlayers, players]);
+  }, [history, activeTeamId, teamPlayers, players, seasonTabSeasonFilter]);
 
   const startNewMatch = () => {
     if (!opponent.trim() || selectedStarters.length !== 5 || (teams.length > 0 && !selectedMatchTeamId)) return;
@@ -1691,13 +1726,15 @@ export default function App() {
       starting5: currentStarting5,
       teamId: matchTeamId || undefined,
       teamScore,
-      opponentScore
+      opponentScore,
+      season: matchSeason
     };
 
     setHistory([newEntry, ...history]);
     setPlayers(finalPlayers); // Update local state for reset
     setIsMatchActive(false);
     setMatchTeamId(null);
+    setMatchSeason(DEFAULT_SEASON);
     setGameClockRunning(false);
     setCurrentPeriod(1);
     setPeriodElapsed({ 1: 0, 2: 0, 3: 0, 4: 0 });
@@ -2464,15 +2501,33 @@ export default function App() {
   );
 
   const renderHistory = () => {
-    const filteredHistory = activeTeamId === 'all' 
-      ? history 
-      : history.filter(m => m.teamId === activeTeamId);
+    const filteredHistory = history.filter(m => {
+      const matchTeam = activeTeamId === 'all' || m.teamId === activeTeamId;
+      const matchSeasonVal = m.season || '2026/2027';
+      const matchSeasonMatch = historySeasonFilter === 'All' || matchSeasonVal === historySeasonFilter;
+      return matchTeam && matchSeasonMatch;
+    });
 
     return (
       <div className="space-y-6">
-        <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">
-          Wedstrijdhistorie{teams.length > 0 && ` - ${activeTeamId === 'all' ? 'Alle spelers' : (teams.find(t => t.id === activeTeamId)?.name || 'Alle spelers')}`}
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">
+            Wedstrijdhistorie{teams.length > 0 && ` - ${activeTeamId === 'all' ? 'Alle spelers' : (teams.find(t => t.id === activeTeamId)?.name || 'Alle spelers')}`}
+          </h2>
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase font-bold text-text-muted">Seizoen:</span>
+            <select
+              value={historySeasonFilter}
+              onChange={(e) => setHistorySeasonFilter(e.target.value)}
+              className="bg-surface border border-white/10 rounded-xl px-3 py-1.5 focus:outline-none focus:border-primary text-white text-xs cursor-pointer font-bold"
+            >
+              <option value="All">Alle Seizoenen</option>
+              <option value="2026/2027">2026/2027</option>
+              <option value="2025/2026">2025/2026</option>
+              <option value="2024/2025">2024/2025</option>
+            </select>
+          </div>
+        </div>
 
         {filteredHistory.length > 0 && (() => {
           const hTotals = {
@@ -2604,6 +2659,10 @@ export default function App() {
                             </span>
                           </>
                         )}
+                        <span className="text-[9px] sm:text-[10px] text-primary/60 font-black">•</span>
+                        <span className="text-[9px] sm:text-[10px] font-black uppercase font-display bg-white/5 text-text-muted py-0.5 px-2 rounded-md border border-white/5">
+                          {match.season || '2026/2027'}
+                        </span>
                       </div>
                     );
                   })()}
@@ -2724,25 +2783,45 @@ export default function App() {
 
   const renderSeason = () => {
     const stats = seasonStats();
-    const filteredMatchesForPDF = activeTeamId === 'all' 
-      ? history 
-      : history.filter(m => m.teamId === activeTeamId);
+    const filteredMatchesForPDF = history.filter(m => {
+      const matchTeam = activeTeamId === 'all' || m.teamId === activeTeamId;
+      const matchSeasonVal = m.season || '2026/2027';
+      const matchSeasonMatch = seasonTabSeasonFilter === 'All' || matchSeasonVal === seasonTabSeasonFilter;
+      return matchTeam && matchSeasonMatch;
+    });
     const calculatedTotalPlusMinus = filteredMatchesForPDF.reduce((sum, m) => sum + ((m.teamScore ?? 0) - (m.opponentScore ?? 0)), 0);
 
     return (
       <div className="space-y-6">
-        <div className="flex justify-between items-center bg-surface/50 p-4 rounded-2xl border border-white/5 backdrop-blur-sm">
-          <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">
-            Seizoensstatistieken{teams.length > 0 && ` - ${activeTeamId === 'all' ? 'Alle spelers' : (teams.find(t => t.id === activeTeamId)?.name || 'Alle spelers')}`}
-          </h2>
-          {stats.length > 0 && (
-            <button 
-              onClick={() => exportSeasonStatsToPDF(stats, theme, calculatedTotalPlusMinus)}
-              className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-4 py-2 rounded-xl text-xs sm:text-sm font-black italic uppercase font-display transition-all active:scale-95 border border-primary/20 shadow-lg shadow-primary/5"
-            >
-              <Download size={16} /> <span className="hidden xs:inline">PDF Export</span>
-            </button>
-          )}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-surface/50 p-4 rounded-2xl border border-white/5 backdrop-blur-sm">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">
+              Seizoensstatistieken{teams.length > 0 && ` - ${activeTeamId === 'all' ? 'Alle spelers' : (teams.find(t => t.id === activeTeamId)?.name || 'Alle spelers')}`}
+            </h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase font-bold text-text-muted">Seizoen:</span>
+              <select
+                value={seasonTabSeasonFilter}
+                onChange={(e) => setSeasonTabSeasonFilter(e.target.value)}
+                className="bg-dark border border-white/10 rounded-xl px-3 py-1.5 focus:outline-none focus:border-primary text-white text-xs cursor-pointer font-bold"
+              >
+                <option value="All">Alle Seizoenen</option>
+                <option value="2026/2027">2026/2027</option>
+                <option value="2025/2026">2025/2026</option>
+                <option value="2024/2025">2024/2025</option>
+              </select>
+            </div>
+            {stats.length > 0 && (
+              <button 
+                onClick={() => exportSeasonStatsToPDF(stats, theme, calculatedTotalPlusMinus, seasonTabSeasonFilter)}
+                className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-4 py-2 rounded-xl text-xs sm:text-sm font-black italic uppercase font-display transition-all active:scale-95 border border-primary/20 shadow-lg shadow-primary/5"
+              >
+                <Download size={16} /> <span className="hidden xs:inline">PDF Export</span>
+              </button>
+            )}
+          </div>
         </div>
         <div className={`overflow-hidden rounded-2xl sm:rounded-3xl border shadow-2xl transition-colors ${getTeamBgColorClass(activeTeamId)}`}>
           <div className="overflow-x-auto scrollbar-thin">
@@ -3076,6 +3155,19 @@ export default function App() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm text-text-muted mb-2 uppercase font-medium">Seizoen</label>
+                  <select
+                    value={matchSeason}
+                    onChange={(e) => setMatchSeason(e.target.value)}
+                    className="w-full bg-dark border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-primary transition-colors text-white text-sm cursor-pointer font-bold"
+                  >
+                    <option value="2026/2027">2026/2027 (huidig seizoen)</option>
+                    <option value="2025/2026">2025/2026</option>
+                    <option value="2024/2025">2024/2025</option>
+                  </select>
+                </div>
+
                 {teams.length > 0 && (
                   <div>
                     <label className="block text-sm text-text-muted mb-2 uppercase font-medium">Kies een Team voor deze wedstrijd</label>
@@ -3338,7 +3430,22 @@ export default function App() {
               <div className="bg-white/5 p-4 sm:p-6 flex justify-between items-center border-b border-white/5 flex-shrink-0">
                 <div>
                   <h3 className="text-xl sm:text-3xl font-display font-black italic uppercase tracking-tighter">Match Detail</h3>
-                  <p className="text-text-muted text-[10px] uppercase tracking-[0.2em] font-bold">{formatDate(selectedMatch.date)}</p>
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <p className="text-text-muted text-[10px] uppercase tracking-[0.2em] font-bold">{formatDate(selectedMatch.date)}</p>
+                    <span className="text-white/20 text-xs">•</span>
+                    <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-lg px-2 py-0.5">
+                      <span className="text-[9px] text-text-muted uppercase font-black tracking-wider">Seizoen:</span>
+                      <select
+                        value={selectedMatch.season || '2026/2027'}
+                        onChange={(e) => handleUpdateMatchSeason(selectedMatch.matchId, e.target.value)}
+                        className="bg-transparent border-none text-white text-[10px] font-bold cursor-pointer focus:outline-none py-0.5"
+                      >
+                        <option value="2026/2027">2026/2027</option>
+                        <option value="2025/2026">2025/2026</option>
+                        <option value="2024/2025">2024/2025</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button 

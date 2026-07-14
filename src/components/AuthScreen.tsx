@@ -5,7 +5,6 @@ import {
   sendPasswordResetEmail, 
   signInWithPopup, 
   getAdditionalUserInfo,
-  sendEmailVerification,
   User
 } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
@@ -134,26 +133,6 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
         if (onSuccess) onSuccess(userCredential.user);
       } else if (mode === 'register') {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        
-        // Verificatiemail verzenden via Firebase
-        try {
-          const actionCodeSettings = {
-            url: 'https://app.basketballcoach.nl',
-            handleCodeInApp: false,
-          };
-          await sendEmailVerification(userCredential.user, actionCodeSettings);
-          console.log('Verificatiemail succesvol verzonden via Firebase met ActionCodeSettings.');
-        } catch (verifyError: any) {
-          console.warn('Verificatiemail met ActionCodeSettings mislukt, proberen zonder ActionCodeSettings:', verifyError.message || verifyError);
-          try {
-            await sendEmailVerification(userCredential.user);
-            console.log('Verificatiemail succesvol verzonden via standaard Firebase (zonder ActionCodeSettings).');
-          } catch (fallbackError: any) {
-            console.error('Kritieke fout: Verzenden van standaard Firebase-verificatiemail mislukt:', fallbackError);
-            throw new Error(`Verificatiemail kon niet worden verzonden: ${fallbackError.message || fallbackError}`);
-          }
-        }
-
         await sendRegistrationEmail(email);
         if (onSuccess) onSuccess(userCredential.user);
       } else if (mode === 'forgot-password') {

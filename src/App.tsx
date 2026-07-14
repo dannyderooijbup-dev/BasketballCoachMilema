@@ -26,14 +26,12 @@ import {
   Shield,
   Briefcase,
   Sun,
-  Moon,
-  CheckCircle,
-  AlertCircle
+  Moon
 } from 'lucide-react';
 import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, SEASONS, DEFAULT_SEASON } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
 import { exportMatchToPDF, exportSeasonStatsToPDF } from './pdfUtils';
-import { User, sendEmailVerification, applyActionCode } from 'firebase/auth';
+import { User } from 'firebase/auth';
 import { 
   doc, 
   getDoc, 
@@ -49,7 +47,7 @@ import {
 import { useAuth } from './AuthContext';
 import AuthScreen from './components/AuthScreen';
 import AccountScreen from './components/AccountScreen';
-import { db, auth } from './firebase';
+import { db } from './firebase';
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -62,40 +60,6 @@ export default function App() {
   const { currentUser, loading: loadingAuth, logout } = useAuth();
   const [loadingSync, setLoadingSync] = useState(false);
   const hasSyncedFromFirestore = useRef(false);
-
-  const [verificationStatus, setVerificationStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle');
-  const [verificationError, setVerificationError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const mode = urlParams.get('mode');
-    const oobCode = urlParams.get('oobCode');
-
-    if (mode === 'verifyEmail' && oobCode) {
-      setVerificationStatus('verifying');
-      applyActionCode(auth, oobCode)
-        .then(() => {
-          setVerificationStatus('success');
-          // Clean up URL parameters
-          const newUrl = window.location.origin + window.location.pathname;
-          window.history.replaceState({}, document.title, newUrl);
-          
-          // Force reload of current user if logged in to refresh verification state
-          if (auth.currentUser) {
-            auth.currentUser.reload().then(() => {
-              console.log('User profile reloaded after successful e-mail verification.');
-            }).catch((reloadErr) => {
-              console.error('Failed to reload user after verification:', reloadErr);
-            });
-          }
-        })
-        .catch((err: any) => {
-          console.error('Email verification failed:', err);
-          setVerificationStatus('error');
-          setVerificationError(err.message || 'Onbekende of ongeldige verificatiecode.');
-        });
-    }
-  }, []);
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     return (localStorage.getItem('app-theme') as 'dark' | 'light') || 'dark';
@@ -3030,61 +2994,6 @@ export default function App() {
     }
   };
 
-  if (verificationStatus === 'verifying') {
-    return (
-      <div className="min-h-screen bg-dark flex flex-col items-center justify-center p-4">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
-        <p className="text-text-muted font-mono uppercase tracking-widest text-[10px] sm:text-xs">E-mailadres verifiëren...</p>
-      </div>
-    );
-  }
-
-  if (verificationStatus === 'success') {
-    return (
-      <div className="min-h-screen bg-dark flex flex-col items-center justify-center p-4">
-        <div className="bg-surface border border-white/5 p-8 rounded-3xl max-w-md w-full text-center shadow-2xl relative overflow-hidden">
-          <div className="absolute top-[-20%] left-[-20%] w-48 h-48 rounded-full bg-green-500/10 blur-[60px] pointer-events-none" />
-          <div className="w-16 h-16 rounded-2xl bg-green-500/10 border border-green-500/20 text-green-400 flex items-center justify-center mx-auto mb-6">
-            <CheckCircle size={36} />
-          </div>
-          <h2 className="text-2xl font-black font-display uppercase italic text-white mb-3">E-mail geverifieerd!</h2>
-          <p className="text-text-muted text-sm mb-6 leading-relaxed">
-            Je e-mailadres is succesvol geverifieerd. Je kunt nu direct doorgaan met het gebruik van Basketball Coach.
-          </p>
-          <button
-            onClick={() => setVerificationStatus('idle')}
-            className="w-full bg-primary hover:bg-primary-hover text-white py-3.5 px-6 rounded-2xl font-black font-display uppercase italic text-sm tracking-wider transition-all shadow-[0_4px_12px_rgba(255,106,0,0.2)] active:scale-[0.98]"
-          >
-            Doorgaan
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (verificationStatus === 'error') {
-    return (
-      <div className="min-h-screen bg-dark flex flex-col items-center justify-center p-4">
-        <div className="bg-surface border border-white/5 p-8 rounded-3xl max-w-md w-full text-center shadow-2xl relative overflow-hidden">
-          <div className="absolute top-[-20%] left-[-20%] w-48 h-48 rounded-full bg-red-500/10 blur-[60px] pointer-events-none" />
-          <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center mx-auto mb-6">
-            <X size={36} />
-          </div>
-          <h2 className="text-2xl font-black font-display uppercase italic text-white mb-3">Verificatie mislukt</h2>
-          <p className="text-text-muted text-sm mb-6 leading-relaxed">
-            {verificationError || 'De verificatielink is mogelijk ongeldig of verlopen.'}
-          </p>
-          <button
-            onClick={() => setVerificationStatus('idle')}
-            className="w-full bg-white/5 hover:bg-white/10 text-white py-3.5 px-6 rounded-2xl font-black font-display uppercase italic text-sm tracking-wider transition-all active:scale-[0.98] border border-white/5"
-          >
-            Sluiten
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   if (loadingAuth) {
     return (
       <div className="min-h-screen bg-dark flex flex-col items-center justify-center p-4">
@@ -3109,57 +3018,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen pb-24 md:pb-0 md:pt-6 max-w-5xl mx-auto px-4 md:px-6">
-      {currentUser && !currentUser.emailVerified && (
-        <div className="mb-6 bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center flex-shrink-0 animate-pulse">
-              <AlertCircle size={20} />
-            </div>
-            <div className="text-left">
-              <p className="text-white font-bold text-sm">E-mailadres is nog niet geverifieerd</p>
-              <p className="text-text-muted text-xs">Controleer je inbox ({currentUser.email}) en klik op de link om je account volledig te activeren.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={async () => {
-                if (auth.currentUser) {
-                  try {
-                    await auth.currentUser.reload();
-                    if (auth.currentUser.emailVerified) {
-                      alert("Succes! Je e-mailadres is nu geverifieerd.");
-                      window.location.reload();
-                    } else {
-                      alert("Je e-mailadres is nog niet geverifieerd in ons systeem. Controleer je e-mail en klik op de link.");
-                    }
-                  } catch (err: any) {
-                    console.error("Fout bij verversen status:", err);
-                  }
-                }
-              }}
-              className="flex-shrink-0 text-xs font-black font-display uppercase italic bg-white/5 hover:bg-white/10 text-white border border-white/5 px-4 py-2.5 rounded-xl transition-all active:scale-[0.98] cursor-pointer"
-            >
-              Controleer Status
-            </button>
-            <button
-              onClick={async () => {
-                if (auth.currentUser) {
-                  try {
-                    await sendEmailVerification(auth.currentUser);
-                    alert("Verificatiemail is opnieuw verzonden naar " + auth.currentUser.email);
-                  } catch (err: any) {
-                    console.error("Fout bij opnieuw verzenden van verificatiemail:", err);
-                    alert("Fout bij verzenden: " + (err.message || err));
-                  }
-                }
-              }}
-              className="flex-shrink-0 text-xs font-black font-display uppercase italic bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/25 px-4 py-2.5 rounded-xl transition-all active:scale-[0.98] cursor-pointer"
-            >
-              Stuur opnieuw
-            </button>
-          </div>
-        </div>
-      )}
       <header className="py-4 md:py-6 flex flex-row items-center justify-between gap-4 border-b border-white/5 mb-6">
         <div className="flex-shrink-0">
           <Logo />

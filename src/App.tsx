@@ -911,8 +911,29 @@ export default function App() {
           setTeamPlayers(loadedMappings);
         }
 
-        setPlayers(loadedPlayers);
-        localStorage.setItem('players', JSON.stringify(loadedPlayers));
+        let finalPlayers = loadedPlayers;
+        const activeMatch = (data?.instellingen?.isMatchActive !== undefined) ? data.instellingen.isMatchActive : isMatchActive;
+
+        if (activeMatch && data?.spelers && Array.isArray(data.spelers)) {
+          finalPlayers = loadedPlayers.map(lp => {
+            const activePlayer = data.spelers.find((sp: any) => sp && sp.id === lp.id);
+            if (activePlayer) {
+              return {
+                ...lp,
+                stats: activePlayer.stats && typeof activePlayer.stats === 'object' ? activePlayer.stats : { ...INITIAL_STATS },
+                totalTime: typeof activePlayer.totalTime === 'number' ? activePlayer.totalTime : 0,
+                isRunning: activePlayer.isRunning === true,
+                lastStartTime: typeof activePlayer.lastStartTime === 'number' ? activePlayer.lastStartTime : null,
+                sessions: Array.isArray(activePlayer.sessions) ? activePlayer.sessions : [],
+                lastActions: Array.isArray(activePlayer.lastActions) ? activePlayer.lastActions : []
+              };
+            }
+            return lp;
+          });
+        }
+
+        setPlayers(finalPlayers);
+        localStorage.setItem('players', JSON.stringify(finalPlayers));
 
         const actualTeamCount = loadedTeams.length;
         const currentStoredTeamCount = (data?.profiel?.teamCount !== undefined) ? data.profiel.teamCount : 0;

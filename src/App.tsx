@@ -857,10 +857,21 @@ export default function App() {
         let loadedMappings: TeamPlayer[] = [];
         if (loadedTeams.length > 0) {
           const teamIds = loadedTeams.map(t => t.id);
-          const tpQuery = query(collection(db, 'teamPlayers'), where('teamId', 'in', teamIds));
-          const tpSnap = await getDocs(tpQuery);
-          tpSnap.forEach(tpDoc => {
-            loadedMappings.push({ id: tpDoc.id, ...tpDoc.data() } as TeamPlayer);
+          // Firestore 'in' filters are limited to a maximum of 10 elements. Chunk teamIds to prevent crashes.
+          const chunks: string[][] = [];
+          for (let i = 0; i < teamIds.length; i += 10) {
+            chunks.push(teamIds.slice(i, i + 10));
+          }
+
+          const tpQueries = chunks.map(chunk => 
+            getDocs(query(collection(db, 'teamPlayers'), where('teamId', 'in', chunk)))
+          );
+
+          const tpSnaps = await Promise.all(tpQueries);
+          tpSnaps.forEach(tpSnap => {
+            tpSnap.forEach(tpDoc => {
+              loadedMappings.push({ id: tpDoc.id, ...tpDoc.data() } as TeamPlayer);
+            });
           });
         }
         setTeamPlayers(loadedMappings);

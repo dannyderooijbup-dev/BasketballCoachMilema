@@ -16,11 +16,13 @@ app.use(express.json());
 // Helper function to send email via SMTP or Resend HTTP API
 async function sendEmail({
   to,
+  cc,
   subject,
   html,
   text,
 }: {
   to: string;
+  cc?: string;
   subject: string;
   html: string;
   text: string;
@@ -49,12 +51,13 @@ async function sendEmail({
       const info = await transporter.sendMail({
         from: smtpFrom,
         to,
+        cc,
         subject,
         text,
         html,
       });
 
-      console.log(`[SMTP] Email successfully sent to ${to}: ${info.messageId}`);
+      console.log(`[SMTP] Email successfully sent to ${to} (CC: ${cc || 'none'}): ${info.messageId}`);
       return { success: true, method: "SMTP", messageId: info.messageId };
     } catch (error) {
       console.error(`[SMTP Error] Failed to send email to ${to}:`, error);
@@ -74,6 +77,7 @@ async function sendEmail({
         body: JSON.stringify({
           from: resendFrom,
           to: [to],
+          cc: cc ? [cc] : undefined,
           subject,
           html,
           text,
@@ -86,7 +90,7 @@ async function sendEmail({
       }
 
       const data = await response.json();
-      console.log(`[Resend] Email successfully sent to ${to}: ${data.id}`);
+      console.log(`[Resend] Email successfully sent to ${to} (CC: ${cc || 'none'}): ${data.id}`);
       return { success: true, method: "Resend", id: data.id };
     } catch (error) {
       console.error(`[Resend Error] Failed to send email to ${to}:`, error);
@@ -100,6 +104,9 @@ async function sendEmail({
   console.log(`To enable live emails, set up SMTP or Resend environment variables.`);
   console.log(`------------------------------------------------------`);
   console.log(`To:      ${to}`);
+  if (cc) {
+    console.log(`Cc:      ${cc}`);
+  }
   console.log(`Subject: ${subject}`);
   console.log(`Text:    ${text}`);
   console.log(`======================================================\n`);
@@ -396,7 +403,7 @@ app.post("/api/send-registration-email", async (req, res) => {
     });
 
     Promise.allSettled([
-      sendEmail({ to: email, subject: visitorSubject, html: visitorHtml, text: visitorText }),
+      sendEmail({ to: email, cc: "info@basketballcoach.nl", subject: visitorSubject, html: visitorHtml, text: visitorText }),
       sendEmail({ to: adminEmail, subject: adminSubject, html: adminHtml, text: adminText }),
     ]).then((results) => {
       const visitorResult = results[0];

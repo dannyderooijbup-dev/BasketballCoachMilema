@@ -63,7 +63,7 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
   doc.line(14, 32, 196, 32);
 
   // Calculate team total for this match
-  let tTime = 0, tPtn = 0, tAst = 0, tReb = 0, tStl = 0, tBlk = 0, tTo = 0, tPf = 0, tPm = 0;
+  let tTime = 0, tPtn = 0, tAst = 0, tReb = 0, tDefReb = 0, tOffReb = 0, tStl = 0, tBlk = 0, tTo = 0, tPf = 0, tPm = 0;
   let tFgm = 0, tFga = 0, t3Fgm = 0, t3Fga = 0, tFtm = 0, tFta = 0;
 
   match.players.forEach(p => {
@@ -71,6 +71,8 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
     tPtn += p.stats.points || 0;
     tAst += p.stats.assists || 0;
     tReb += p.stats.rebounds || 0;
+    tDefReb += p.stats.defReb || 0;
+    tOffReb += p.stats.offReb || 0;
     tStl += p.stats.steals || 0;
     tBlk += p.stats.blocks || 0;
     tTo += p.stats.turnovers || 0;
@@ -111,7 +113,9 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
       tp,
       ft,
       p.stats.assists,
-      p.stats.rebounds,
+      p.stats.rebounds || 0,
+      p.stats.defReb || 0,
+      p.stats.offReb || 0,
       p.stats.steals,
       p.stats.blocks,
       p.stats.turnovers,
@@ -135,6 +139,8 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
     ftTotal,
     tAst,
     tReb,
+    tDefReb,
+    tOffReb,
     tStl,
     tBlk,
     tTo,
@@ -144,15 +150,15 @@ export function exportMatchToPDF(match: MatchHistoryEntry, theme: 'dark' | 'ligh
 
   autoTable(doc, {
     startY: 51,
-    head: [['Speler', 'Tijd', 'PTN', 'FG', '3P', 'FT', 'AST', 'REB', 'STL', 'BLK', 'TO', 'PF', '+/-']],
+    head: [['Speler', 'Tijd', 'PTN', 'FG', '3P', 'FT', 'AST', 'REB', 'D-REB', 'O-REB', 'STL', 'BLK', 'TO', 'PF', '+/-']],
     body: tableData,
     theme: 'plain',
     styles: {
       fillColor: isLight ? [255, 255, 255] : [30, 41, 59], // #FFFFFF or #1E293B
       textColor: isLight ? [15, 23, 42] : [255, 255, 255],
-      fontSize: 8,
+      fontSize: 7.2,
       font: 'helvetica',
-      cellPadding: 3,
+      cellPadding: 2,
       lineColor: isLight ? [226, 232, 240] : [15, 23, 42],
       lineWidth: 0.5,
     },
@@ -244,7 +250,7 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
   let totalFgm = 0, totalFga = 0;
   let total3Fgm = 0, total3Fga = 0;
   let totalFtm = 0, totalFta = 0;
-  let totalReb = 0, totalAst = 0;
+  let totalReb = 0, totalDefReb = 0, totalOffReb = 0, totalAst = 0;
   let totalStl = 0, totalBlk = 0, totalTo = 0, totalPf = 0, totalPm = 0;
 
   stats.forEach(s => {
@@ -257,6 +263,8 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
     totalFtm += s.ftm || 0;
     totalFta += s.fta || 0;
     totalReb += s.rebounds || 0;
+    totalDefReb += s.defReb || 0;
+    totalOffReb += s.offReb || 0;
     totalAst += s.assists || 0;
     totalStl += s.steals || 0;
     totalBlk += s.blocks || 0;
@@ -293,6 +301,8 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
       calculatePercentage(s.threeFgm, s.threeFga),
       calculatePercentage(s.ftm, s.fta),
       matches > 0 ? (s.rebounds / matches).toFixed(1) : '0.0',
+      matches > 0 ? ((s.defReb || 0) / matches).toFixed(1) : '0.0',
+      matches > 0 ? ((s.offReb || 0) / matches).toFixed(1) : '0.0',
       matches > 0 ? (s.assists / matches).toFixed(1) : '0.0',
       matches > 0 ? (s.steals / matches).toFixed(1) : '0.0',
       matches > 0 ? (s.blocks / matches).toFixed(1) : '0.0',
@@ -311,6 +321,8 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
     calculatePercentage(total3Fgm, total3Fga),
     calculatePercentage(totalFtm, totalFta),
     totalTeamMatches > 0 ? (totalReb / totalTeamMatches).toFixed(1) : '0.0',
+    totalTeamMatches > 0 ? (totalDefReb / totalTeamMatches).toFixed(1) : '0.0',
+    totalTeamMatches > 0 ? (totalOffReb / totalTeamMatches).toFixed(1) : '0.0',
     totalTeamMatches > 0 ? (totalAst / totalTeamMatches).toFixed(1) : '0.0',
     totalTeamMatches > 0 ? (totalStl / totalTeamMatches).toFixed(1) : '0.0',
     totalTeamMatches > 0 ? (totalBlk / totalTeamMatches).toFixed(1) : '0.0',
@@ -321,7 +333,7 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
 
   autoTable(doc, {
     startY: 48,
-    head: [['Speler', 'W', 'Tijd AVG', 'PTN AVG', 'FG%', '3P%', 'FT%', 'REB AVG', 'AST AVG', 'STL AVG', 'BLK AVG', 'TO AVG', 'PF AVG', '+/-']],
+    head: [['Speler', 'W', 'Tijd AVG', 'PTN AVG', 'FG%', '3P%', 'FT%', 'REB AVG', 'DEF REB', 'OFF REB', 'AST AVG', 'STL AVG', 'BLK AVG', 'TO AVG', 'PF AVG', '+/-']],
     body: tableData,
     theme: 'plain',
     styles: {

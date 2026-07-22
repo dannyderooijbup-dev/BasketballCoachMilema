@@ -14,6 +14,9 @@ export interface Stats {
   points: number;
   assists: number;
   rebounds: number;
+  offReb: number;
+  defReb: number;
+  teamReb: number;
   steals: number;
   blocks: number;
   turnovers: number;

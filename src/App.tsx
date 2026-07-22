@@ -284,12 +284,13 @@ export default function App() {
 
   const getTotalMatchDuration = () => {
     let total = 0;
-    const maxPeriod = Math.max(4, ...Object.keys(periodElapsed).map(Number), currentPeriod);
+    const safePeriodElapsed = periodElapsed && typeof periodElapsed === 'object' ? periodElapsed : { 1: 0, 2: 0, 3: 0, 4: 0 };
+    const maxPeriod = Math.max(4, ...Object.keys(safePeriodElapsed).map(Number), currentPeriod || 1);
     for (let p = 1; p <= maxPeriod; p++) {
       if (p === currentPeriod) {
         total += getLivePeriodElapsedTime();
       } else {
-        total += periodElapsed[p] || 0;
+        total += safePeriodElapsed[p] || 0;
       }
     }
     return total;
@@ -488,7 +489,7 @@ export default function App() {
             
             // Stats fallback
             const defaultStats = {
-              points: 0, assists: 0, rebounds: 0, steals: 0, blocks: 0, turnovers: 0,
+              points: 0, assists: 0, rebounds: 0, offReb: 0, defReb: 0, teamReb: 0, steals: 0, blocks: 0, turnovers: 0,
               fgm: 0, fga: 0, threeFgm: 0, threeFga: 0, ftm: 0, fta: 0, pf: 0
             };
             const stats = p.stats && typeof p.stats === 'object' ? { ...defaultStats, ...p.stats } : defaultStats;
@@ -546,7 +547,7 @@ export default function App() {
             const players = Array.isArray(match.players) ? match.players.map((p: any) => {
               if (!p || typeof p !== 'object') return null;
               const defaultStats = {
-                points: 0, assists: 0, rebounds: 0, steals: 0, blocks: 0, turnovers: 0,
+                points: 0, assists: 0, rebounds: 0, offReb: 0, defReb: 0, teamReb: 0, steals: 0, blocks: 0, turnovers: 0,
                 fgm: 0, fga: 0, threeFgm: 0, threeFga: 0, ftm: 0, fta: 0, pf: 0
               };
               return {
@@ -925,22 +926,57 @@ export default function App() {
         let finalPlayers = loadedPlayers;
         const activeMatch = (data?.instellingen?.isMatchActive !== undefined) ? data.instellingen.isMatchActive : isMatchActive;
 
-        if (activeMatch && data?.spelers && Array.isArray(data.spelers)) {
-          finalPlayers = loadedPlayers.map(lp => {
-            const activePlayer = data.spelers.find((sp: any) => sp && sp.id === lp.id);
-            if (activePlayer) {
-              return {
-                ...lp,
-                stats: activePlayer.stats && typeof activePlayer.stats === 'object' ? activePlayer.stats : { ...INITIAL_STATS },
-                totalTime: typeof activePlayer.totalTime === 'number' ? activePlayer.totalTime : 0,
-                isRunning: activePlayer.isRunning === true,
-                lastStartTime: typeof activePlayer.lastStartTime === 'number' ? activePlayer.lastStartTime : null,
-                sessions: Array.isArray(activePlayer.sessions) ? activePlayer.sessions : [],
-                lastActions: Array.isArray(activePlayer.lastActions) ? activePlayer.lastActions : []
-              };
-            }
-            return lp;
-          });
+        // Try to get the players currently in memory/localStorage (to prevent overwriting active match stats)
+        const savedPlayersStr = localStorage.getItem('players');
+        let localPlayersForMatch: any[] = [];
+        if (savedPlayersStr) {
+          try {
+            localPlayersForMatch = JSON.parse(savedPlayersStr);
+          } catch(e){}
+        }
+
+        const hasLocalStats = Array.isArray(localPlayersForMatch) && localPlayersForMatch.length > 0 && 
+          localPlayersForMatch.some(p => 
+            (p.stats && Object.values(p.stats).some(v => typeof v === 'number' && v > 0)) || 
+            (typeof p.totalTime === 'number' && p.totalTime > 0) || 
+            p.isRunning === true
+          );
+
+        if (activeMatch) {
+          if (hasLocalStats) {
+            console.log("Using local active players stats to prevent overwrite on refresh.");
+            finalPlayers = loadedPlayers.map(lp => {
+              const localPlayer = localPlayersForMatch.find((sp: any) => sp && sp.id === lp.id);
+              if (localPlayer) {
+                return {
+                  ...lp,
+                  stats: localPlayer.stats && typeof localPlayer.stats === 'object' ? localPlayer.stats : { ...INITIAL_STATS },
+                  totalTime: typeof localPlayer.totalTime === 'number' ? localPlayer.totalTime : 0,
+                  isRunning: localPlayer.isRunning === true,
+                  lastStartTime: typeof localPlayer.lastStartTime === 'number' ? localPlayer.lastStartTime : null,
+                  sessions: Array.isArray(localPlayer.sessions) ? localPlayer.sessions : [],
+                  lastActions: Array.isArray(localPlayer.lastActions) ? localPlayer.lastActions : []
+                };
+              }
+              return lp;
+            });
+          } else if (data?.spelers && Array.isArray(data.spelers)) {
+            finalPlayers = loadedPlayers.map(lp => {
+              const activePlayer = data.spelers.find((sp: any) => sp && sp.id === lp.id);
+              if (activePlayer) {
+                return {
+                  ...lp,
+                  stats: activePlayer.stats && typeof activePlayer.stats === 'object' ? activePlayer.stats : { ...INITIAL_STATS },
+                  totalTime: typeof activePlayer.totalTime === 'number' ? activePlayer.totalTime : 0,
+                  isRunning: activePlayer.isRunning === true,
+                  lastStartTime: typeof activePlayer.lastStartTime === 'number' ? activePlayer.lastStartTime : null,
+                  sessions: Array.isArray(activePlayer.sessions) ? activePlayer.sessions : [],
+                  lastActions: Array.isArray(activePlayer.lastActions) ? activePlayer.lastActions : []
+                };
+              }
+              return lp;
+            });
+          }
         }
 
         setPlayers(finalPlayers);
@@ -1459,10 +1495,16 @@ export default function App() {
 
     if (delta < 0) {
       statChanges = { [stat]: -1 };
+      if (stat === 'offReb' || stat === 'defReb' || stat === 'teamReb') {
+        statChanges.rebounds = -1;
+      }
       const DutchLabels: Record<string, string> = {
         points: '-1 PTN',
         assists: '-1 Assist',
         rebounds: '-1 Rebound',
+        offReb: '-1 Aanvallend Rebound',
+        defReb: '-1 Verdedigend Rebound',
+        teamReb: '-1 Team Rebound',
         steals: '-1 Steal',
         blocks: '-1 Block',
         turnovers: '-1 Turnover',
@@ -1490,10 +1532,16 @@ export default function App() {
         label = 'VW Miss';
       } else {
         statChanges = { [stat]: 1 };
+        if (stat === 'offReb' || stat === 'defReb' || stat === 'teamReb') {
+          statChanges.rebounds = 1;
+        }
         const DutchLabels: Record<string, string> = {
           points: '+1 PTN',
           assists: '+1 Assist',
           rebounds: '+1 Rebound',
+          offReb: '+1 Aanvallend Rebound',
+          defReb: '+1 Verdedigend Rebound',
+          teamReb: '+1 Team Rebound',
           steals: '+1 Steal',
           blocks: '+1 Block',
           turnovers: '+1 Turnover',
@@ -1625,6 +1673,9 @@ export default function App() {
             points: 0,
             assists: 0,
             rebounds: 0,
+            offReb: 0,
+            defReb: 0,
+            teamReb: 0,
             steals: 0,
             blocks: 0,
             turnovers: 0,
@@ -1641,6 +1692,9 @@ export default function App() {
         s.points += p.stats.points;
         s.assists += p.stats.assists;
         s.rebounds += p.stats.rebounds;
+        s.offReb += p.stats.offReb || 0;
+        s.defReb += p.stats.defReb || 0;
+        s.teamReb += p.stats.teamReb || 0;
         s.steals += p.stats.steals;
         s.blocks += p.stats.blocks;
         s.turnovers += p.stats.turnovers;
@@ -1668,6 +1722,9 @@ export default function App() {
             points: 0,
             assists: 0,
             rebounds: 0,
+            offReb: 0,
+            defReb: 0,
+            teamReb: 0,
             steals: 0,
             blocks: 0,
             turnovers: 0,
@@ -2505,7 +2562,9 @@ export default function App() {
                  
                  <div className="grid grid-cols-2 xs:grid-cols-3 gap-2 sm:gap-3">
                    <StatControl label="AST" value={player.stats.assists} onAdd={() => updateStat(player.id, 'assists', 1)} onSub={() => updateStat(player.id, 'assists', -1)} />
-                   <StatControl label="REB" value={player.stats.rebounds} onAdd={() => updateStat(player.id, 'rebounds', 1)} onSub={() => updateStat(player.id, 'rebounds', -1)} />
+                   <StatControl label="DEF REB" value={player.stats.defReb || 0} onAdd={() => updateStat(player.id, 'defReb', 1)} onSub={() => updateStat(player.id, 'defReb', -1)} />
+                   <StatControl label="OFF REB" value={player.stats.offReb || 0} onAdd={() => updateStat(player.id, 'offReb', 1)} onSub={() => updateStat(player.id, 'offReb', -1)} />
+                   <StatControl label="TEAM REB" value={player.stats.teamReb || 0} onAdd={() => updateStat(player.id, 'teamReb', 1)} onSub={() => updateStat(player.id, 'teamReb', -1)} />
                    <StatControl label="STL" value={player.stats.steals} onAdd={() => updateStat(player.id, 'steals', 1)} onSub={() => updateStat(player.id, 'steals', -1)} />
                    <StatControl label="BLK" value={player.stats.blocks} onAdd={() => updateStat(player.id, 'blocks', 1)} onSub={() => updateStat(player.id, 'blocks', -1)} />
                    <StatControl label="TO" value={player.stats.turnovers} onAdd={() => updateStat(player.id, 'turnovers', 1)} onSub={() => updateStat(player.id, 'turnovers', -1)} />
@@ -2579,6 +2638,9 @@ export default function App() {
             ftm: 0, fta: 0,
             assists: 0,
             rebounds: 0,
+            offReb: 0,
+            defReb: 0,
+            teamReb: 0,
             steals: 0,
             blocks: 0,
             turnovers: 0,
@@ -2598,6 +2660,9 @@ export default function App() {
               hTotals.fta += p.stats.fta || 0;
               hTotals.assists += p.stats.assists || 0;
               hTotals.rebounds += p.stats.rebounds || 0;
+              hTotals.offReb += p.stats.offReb || 0;
+              hTotals.defReb += p.stats.defReb || 0;
+              hTotals.teamReb += p.stats.teamReb || 0;
               hTotals.steals += p.stats.steals || 0;
               hTotals.blocks += p.stats.blocks || 0;
               hTotals.turnovers += p.stats.turnovers || 0;
@@ -2875,6 +2940,8 @@ export default function App() {
                   <th className="px-3 sm:px-4 py-3 sm:py-4">3P%</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">FT%</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">REB</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">DEF REB</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">OFF REB</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">AST</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">STL</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">BLK</th>
@@ -2899,6 +2966,8 @@ export default function App() {
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.threeFgm, s.threeFga)}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.ftm, s.fta)}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.rebounds / s.matches).toFixed(1) : '0.0'}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? ((s.defReb || 0) / s.matches).toFixed(1) : '0.0'}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? ((s.offReb || 0) / s.matches).toFixed(1) : '0.0'}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.assists / s.matches).toFixed(1) : '0.0'}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.steals / s.matches).toFixed(1) : '0.0'}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.blocks / s.matches).toFixed(1) : '0.0'}</td>
@@ -2921,6 +2990,8 @@ export default function App() {
                   let totalFtm = stats.reduce((sum, s) => sum + (s.ftm || 0), 0);
                   let totalFta = stats.reduce((sum, s) => sum + (s.fta || 0), 0);
                   let totalRebounds = stats.reduce((sum, s) => sum + (s.rebounds || 0), 0);
+                  let totalDefReb = stats.reduce((sum, s) => sum + (s.defReb || 0), 0);
+                  let totalOffReb = stats.reduce((sum, s) => sum + (s.offReb || 0), 0);
                   let totalAssists = stats.reduce((sum, s) => sum + (s.assists || 0), 0);
                   let totalSteals = stats.reduce((sum, s) => sum + (s.steals || 0), 0);
                   let totalBlocks = stats.reduce((sum, s) => sum + (s.blocks || 0), 0);
@@ -2948,6 +3019,8 @@ export default function App() {
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(total3Fgm, total3Fga)}</td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(totalFtm, totalFta)}</td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalRebounds / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalDefReb / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalOffReb / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalAssists / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalSteals / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalBlocks / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
@@ -2962,7 +3035,7 @@ export default function App() {
 
                 {stats.length === 0 && (
                   <tr>
-                    <td colSpan={14} className="py-20 text-center text-text-muted">Geen data beschikbaar</td>
+                    <td colSpan={16} className="py-20 text-center text-text-muted">Geen data beschikbaar</td>
                   </tr>
                 )}
               </tbody>

@@ -121,7 +121,7 @@ async function sendEmail({
 // API Routes
 app.post("/api/send-registration-email", async (req, res) => {
   try {
-    const { email, name, role, club } = req.body;
+    const { email, name, role, club, uid } = req.body;
 
     if (!email) {
       return res.status(400).json({ error: "Email is verplicht." });
@@ -130,17 +130,19 @@ app.post("/api/send-registration-email", async (req, res) => {
     const displayName = name || email.split("@")[0];
     const coachRole = role || "Coach";
     const coachClub = club || "Niet gespecificeerd";
-    const adminEmail = "dannyderooij020@gmail.com";
+    const userUid = uid || "Onbekend";
+    const adminEmail = "webmaster@basketballcoach.nl";
 
     // 1. Visitor Welcome Email Template
-    const visitorSubject = "Welkom bij Basketball Coach - Bevestiging van je registratie 🏀";
-    const visitorText = `Beste ${displayName},\n\nWelkom bij Basketball Coach Game Stats!\nJe account is succesvol aangemaakt. Je kunt nu direct aan de slag met het bijhouden van spelerstatistieken, wedstrijden beheren en je teams organiseren.\n\nSportieve groet,\nHet Basketball Coach Team`;
+    const visitorSubject = "Welkom bij Basketball Coach GameStats 🏀";
+    const visitorText = `Beste ${displayName},\n\nWelkom bij Basketball Coach GameStats!\nJe account is succesvol aangemaakt op ons platform.\n\nBelangrijke stap: We hebben ook een officiële verificatiemail van Firebase naar je gestuurd. Klik eerst op de link in dat bericht om je e-mailadres te bevestigen. Dit is vereist om in te loggen.\n\nZodra je geverifieerd bent, kun je direct inloggen via https://app.basketballcoach.nl.\n\nSportieve groet,\nHet Basketball Coach Systeem`;
     
     const visitorHtml = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
+        <title>Welkom bij Basketball Coach GameStats</title>
         <style>
           body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -197,25 +199,24 @@ app.post("/api/send-registration-email", async (req, res) => {
             font-size: 15px;
             margin-bottom: 25px;
           }
-          .btn-container {
-            text-align: center;
-            margin: 30px 0;
+          .verification-box {
+            background-color: rgba(255, 106, 0, 0.1);
+            border-left: 4px solid #FF6A00;
+            padding: 15px 20px;
+            border-radius: 4px;
+            margin: 25px 0;
           }
-          .btn {
-            background-color: #FF6A00;
-            color: #ffffff !important;
-            text-decoration: none;
-            padding: 12px 28px;
-            font-weight: 700;
-            border-radius: 8px;
-            display: inline-block;
+          .verification-box h4 {
+            margin: 0 0 5px 0;
+            color: #FF6A00;
             font-size: 14px;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            transition: background-color 0.2s;
           }
-          .btn:hover {
-            background-color: #e65c00;
+          .verification-box p {
+            margin: 0;
+            font-size: 14px;
+            color: #e5e7eb;
           }
           .features {
             background-color: rgba(255, 255, 255, 0.02);
@@ -239,6 +240,26 @@ app.post("/api/send-registration-email", async (req, res) => {
             margin-bottom: 8px;
             font-size: 14px;
           }
+          .btn-container {
+            text-align: center;
+            margin: 30px 0;
+          }
+          .btn {
+            background-color: #FF6A00;
+            color: #ffffff !important;
+            text-decoration: none;
+            padding: 12px 28px;
+            font-weight: 700;
+            border-radius: 8px;
+            display: inline-block;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            transition: background-color 0.2s;
+          }
+          .btn:hover {
+            background-color: #e65c00;
+          }
           .footer {
             background-color: #0b0f19;
             padding: 20px;
@@ -253,30 +274,35 @@ app.post("/api/send-registration-email", async (req, res) => {
         <div class="container">
           <div class="header">
             <h1>Basketball Coach</h1>
-            <p>Game Stats Dashboard</p>
+            <p>GameStats Dashboard</p>
           </div>
           <div class="content">
             <p class="greeting">Beste ${displayName},</p>
-            <p class="intro-text">Welkom aan boord! Je account is succesvol aangemaakt op ons platform. Vanaf nu heb je de tools in handen om je team naar de overwinning te leiden en statistieken op professionele wijze te analyseren.</p>
+            <p class="intro-text">Welkom bij <strong>Basketball Coach GameStats</strong>! Je account is succesvol aangemaakt op ons platform. Vanaf nu heb je de ultieme tools in handen om je team te beheren en spelerstatistieken op professionele wijze vast te leggen en te analyseren.</p>
             
+            <div class="verification-box">
+              <h4>⚠️ Belangrijke Stap: E-mail Verificatie</h4>
+              <p>We hebben zojuist een officiële verificatiemail van Firebase naar je gestuurd. Klik op de link in dat e-mailbericht om je e-mailadres te bevestigen. Dit is vereist voordat je kunt inloggen op het platform.</p>
+            </div>
+
             <div class="features">
-              <h3>Wat kun je nu doen?</h3>
+              <h3>Wat kun je met GameStats doen?</h3>
               <ul>
-                <li><strong>Teams & Spelers Beheren:</strong> Voeg teams toe, selecteer posities en stel rugnummers in.</li>
-                <li><strong>Wedstrijden Vastleggen:</strong> Houd in real-time speeltijd, fouten en scores bij tijdens de wedstrijd.</li>
-                <li><strong>Statistieken Analyseren:</strong> Bekijk per wedstrijd of over het hele seizoen de prestaties per speler (punten, rebounds, assists, schotpercentages).</li>
-                <li><strong>Exporteren:</strong> Genereer professionele PDF-rapporten van je statistieken om te delen met spelers of de club.</li>
+                <li><strong>Teams &amp; Spelers Beheren:</strong> Maak teams aan, voeg spelers toe, stel rugnummers in en configureer startposities.</li>
+                <li><strong>Live Wedstrijden Vastleggen:</strong> Houd in real-time speeltijd, fouten, assists, rebounds en scores bij tijdens de wedstrijd.</li>
+                <li><strong>Professionele Statistieken:</strong> Analyseer schotpercentages, seizoensgemiddelden en prestaties per speler.</li>
+                <li><strong>PDF Export:</strong> Genereer en exporteer professionele PDF-rapporten van je statistieken om te delen met spelers of de club.</li>
               </ul>
             </div>
 
             <div class="btn-container">
-              <a href="${process.env.APP_URL || "https://basketballcoach.nl"}" class="btn" target="_blank">Start Dashboard</a>
+              <a href="https://app.basketballcoach.nl" class="btn" target="_blank">Naar de App</a>
             </div>
 
-            <p style="margin-bottom: 0;">Sportieve groet,<br><strong>Het Basketball Coach Team</strong></p>
+            <p style="margin-bottom: 0;">Met sportieve groet,<br><strong>Het Basketball Coach Systeem</strong></p>
           </div>
           <div class="footer">
-            <p>&copy; ${new Date().getFullYear()} Basketball Coach Game Stats. Alle rechten voorbehouden.</p>
+            <p>&copy; ${new Date().getFullYear()} Basketball Coach GameStats. Alle rechten voorbehouden.</p>
             <p style="font-size: 10px; margin-top: 5px; color: #6b7280;">Dit is een automatisch verzonden bericht. Beantwoorden is niet mogelijk.</p>
           </div>
         </div>
@@ -285,14 +311,15 @@ app.post("/api/send-registration-email", async (req, res) => {
     `;
 
     // 2. Admin Notification Email Template
-    const adminSubject = `🚨 Nieuwe Coach Geregistreerd: ${email}`;
-    const adminText = `Hallo Admin,\n\nEr is zojuist een nieuwe coach geregistreerd op het platform!\n\nGegevens:\n- Email: ${email}\n- Naam: ${displayName}\n- Rol: ${coachRole}\n- Club: ${coachClub}\n- Tijdstip: ${new Date().toLocaleString("nl-NL")}\n\nMet vriendelijke groet,\nBasketball Coach Systeem`;
+    const adminSubject = "Nieuwe registratie";
+    const adminText = `Hallo Admin,\n\nEr is zojuist een nieuwe coach geregistreerd op het platform!\n\nGegevens:\n- Naam: ${displayName}\n- Email: ${email}\n- User UID: ${userUid}\n- Rol: ${coachRole}\n- Club: ${coachClub}\n- Tijdstip: ${new Date().toLocaleString("nl-NL")}\n\nMet vriendelijke groet,\nBasketball Coach Systeem`;
     
     const adminHtml = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
+        <title>Nieuwe registratie</title>
         <style>
           body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -343,7 +370,7 @@ app.post("/api/send-registration-email", async (req, res) => {
             background-color: rgba(255, 255, 255, 0.05);
             font-weight: bold;
             color: #FF6A00;
-            width: 30%;
+            width: 35%;
           }
           .footer {
             background-color: #0b0f19;
@@ -365,12 +392,16 @@ app.post("/api/send-registration-email", async (req, res) => {
             
             <table class="table">
               <tr>
+                <th>Naam</th>
+                <td>${displayName}</td>
+              </tr>
+              <tr>
                 <th>E-mailadres</th>
                 <td><strong>${email}</strong></td>
               </tr>
               <tr>
-                <th>Naam</th>
-                <td>${displayName}</td>
+                <th>User UID</th>
+                <td><code style="font-family: monospace; font-size: 13px; color: #FF6A00;">${userUid}</code></td>
               </tr>
               <tr>
                 <th>Functie/Rol</th>
@@ -396,21 +427,33 @@ app.post("/api/send-registration-email", async (req, res) => {
       </html>
     `;
 
-    // Send both emails in parallel in the background to avoid blocking the client UI
+    // Send the response immediately so we never block user registration even if emails fail
     res.json({
       success: true,
       message: "Registration email processing started in the background."
     });
 
+    // Send both emails in parallel in the background
     Promise.allSettled([
-      sendEmail({ to: email, cc: "info@basketballcoach.nl", subject: visitorSubject, html: visitorHtml, text: visitorText }),
+      sendEmail({ to: email, subject: visitorSubject, html: visitorHtml, text: visitorText }),
       sendEmail({ to: adminEmail, subject: adminSubject, html: adminHtml, text: adminText }),
     ]).then((results) => {
       const visitorResult = results[0];
       const adminResult = results[1];
-      console.log("Background email sending completed. Visitor:", visitorResult.status, "Admin:", adminResult.status);
+
+      if (visitorResult.status === "fulfilled") {
+        console.log("Welcome email sent");
+      } else {
+        console.error("Welcome email failed or Resend failed:", visitorResult.reason);
+      }
+
+      if (adminResult.status === "fulfilled") {
+        console.log("Admin notification sent");
+      } else {
+        console.error("Admin notification failed or Resend failed:", adminResult.reason);
+      }
     }).catch((err) => {
-      console.error("Error in background email sending:", err);
+      console.error("Registration email failed:", err);
     });
   } catch (error: any) {
     console.error("Fout bij het verwerken van registratiemail:", error);

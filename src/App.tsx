@@ -85,6 +85,9 @@ export default function App() {
   const [showAddTeamModal, setShowAddTeamModal] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
   const [isSavingTeam, setIsSavingTeam] = useState(false);
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [editingTeamName, setEditingTeamName] = useState<string>('');
+  const [isSavingTeamName, setIsSavingTeamName] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string>('all');
   const [players, setPlayers] = useState<Player[]>([]);
 
@@ -210,6 +213,32 @@ export default function App() {
       setTeams(prev => prev.map(t => t.id === teamId ? { ...t, colorScheme: schemeName } : t));
     } catch (err) {
       console.error("Fout bij bijwerken van teamkleur:", err);
+    }
+  };
+
+  const updateTeamName = async (teamId: string, newName: string) => {
+    if (!currentUser) return;
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      alert("Teamnaam mag niet leeg zijn.");
+      return;
+    }
+    if (trimmed.length > 100) {
+      alert("Teamnaam mag maximaal 100 tekens bevatten.");
+      return;
+    }
+
+    setIsSavingTeamName(true);
+    try {
+      const teamRef = doc(db, 'teams', teamId);
+      await updateDoc(teamRef, { name: trimmed });
+      setTeams(prev => prev.map(t => t.id === teamId ? { ...t, name: trimmed } : t));
+      setEditingTeamId(null);
+    } catch (err: any) {
+      console.error("Fout bij bijwerken van teamnaam:", err);
+      alert(`Fout bij het bijwerken van de teamnaam: ${err?.message || err}`);
+    } finally {
+      setIsSavingTeamName(false);
     }
   };
 
@@ -1964,9 +1993,59 @@ export default function App() {
                     </button>
                   </div>
                   
-                  <h3 className="text-xl font-display font-black uppercase italic tracking-tight text-white mb-2 truncate">
-                    {team.name}
-                  </h3>
+                  {editingTeamId === team.id ? (
+                    <div className="flex items-center gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={editingTeamName}
+                        onChange={(e) => setEditingTeamName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            updateTeamName(team.id, editingTeamName);
+                          } else if (e.key === 'Escape') {
+                            setEditingTeamId(null);
+                          }
+                        }}
+                        className="bg-dark text-white border border-white/10 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:border-primary font-sans flex-1 min-w-0"
+                        placeholder="Team naam..."
+                        autoFocus
+                        disabled={isSavingTeamName}
+                        maxLength={100}
+                      />
+                      <button
+                        onClick={() => updateTeamName(team.id, editingTeamName)}
+                        disabled={isSavingTeamName}
+                        className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-400/10 p-1.5 rounded-lg transition-all cursor-pointer text-xs font-bold uppercase font-sans shrink-0"
+                        title="Opslaan"
+                      >
+                        {isSavingTeamName ? '...' : 'OK'}
+                      </button>
+                      <button
+                        onClick={() => setEditingTeamId(null)}
+                        disabled={isSavingTeamName}
+                        className="text-text-muted hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition-all cursor-pointer shrink-0"
+                        title="Annuleren"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2 mb-2 group/title min-w-0">
+                      <h3 className="text-xl font-display font-black uppercase italic tracking-tight text-white truncate flex-1">
+                        {team.name}
+                      </h3>
+                      <button
+                        onClick={() => {
+                          setEditingTeamId(team.id);
+                          setEditingTeamName(team.name);
+                        }}
+                        className="text-text-muted hover:text-white p-1.5 rounded-lg hover:bg-white/5 opacity-0 group-hover/title:opacity-100 focus:opacity-100 transition-all cursor-pointer shrink-0"
+                        title="Naam bewerken"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    </div>
+                  )}
                   
                   <p className="text-xs text-text-muted font-medium mb-2 flex items-center gap-1.5 font-sans">
                     <Users size={14} className="text-primary/70" /> {teamRelatedPlayers.length} Spelers gekoppeld

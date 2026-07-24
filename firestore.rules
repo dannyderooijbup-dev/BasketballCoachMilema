@@ -2,42 +2,199 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper functions for security checks
+    // ==========================================
+    // HELPER FUNCTIES VOOR BEVEILIGINGSCONTROLES
+    // ==========================================
+
+    // Controleert of de gebruiker succesvol is ingelogd via Firebase Authentication
     function isSignedIn() {
       return request.auth != null;
     }
 
+    // Controleert of de ingelogde gebruiker de eigenaar is op basis van de opgegeven userId
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // Haalt de data op van een specifiek team uit de database
     function getTeam(teamId) {
       return get(/databases/$(database)/documents/teams/$(teamId)).data;
     }
 
-    // Default deny catch-all
+    // Haalt de data op van een specifieke speler uit de database
+    function getPlayer(playerId) {
+      return get(/databases/$(database)/documents/players/$(playerId)).data;
+    }
+
+    // Controleert of de ingelogde gebruiker de eigenaar is van het gekoppelde team
+    function isTeamOwner(teamId) {
+      return isSignedIn() && getTeam(teamId).userId == request.auth.uid;
+    }
+
+    // Controleert of de ingelogde gebruiker de eigenaar is van de gekoppelde speler
+    function isPlayerOwner(playerId) {
+      return isSignedIn() && getPlayer(playerId).userId == request.auth.uid;
+    }
+
+    // Standaard deny-all regel om ongeautoriseerde toegang tot onbekende collecties te voorkomen
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Users Collection (existing structure)
+    // ==========================================
+    // USERS COLLECTIE
+    // ==========================================
     match /users/{userId} {
+      // Alleen de eigenaar mag zijn eigen profiel, instellingen en data inzien, aanmaken, wijzigen of verwijderen
       allow read, write: if isOwner(userId);
     }
 
-    // Teams Collection
+    // ==========================================
+    // TEAMS COLLECTIE
+    // ==========================================
     match /teams/{teamId} {
-      allow read, write: if isSignedIn();
+      // Alleen ingelogde coaches mogen teams aanmaken en zij moeten zichzelf als eigenaar (userId) registreren
+      allow create: if isSignedIn() 
+        && request.resource.data.userId == request.auth.uid
+        // Validatie van verplichte velden, datatypes en bekende velden
+        && request.resource.data.keys().hasAll(['id', 'name', 'userId', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['id', 'name', 'userId', 'createdAt', 'colorScheme'])
+        && request.resource.data.id is string
+        && request.resource.data.name is string 
+        && request.resource.data.name.size() > 0 
+        && request.resource.data.name.size() <= 100 // Maximale lengte voor teamnaam
+        && request.resource.data.userId is string
+        && (request.resource.data.createdAt is int || request.resource.data.createdAt is float)
+        && (!('colorScheme' in request.resource.data) || request.resource.data.colorScheme is string);
+
+      // Alleen de eigenaar mag het team lezen of verwijderen
+      allow read, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      // Alleen de eigenaar mag het team wijzigen; diverse systeemvelden zijn onveranderbaar (immutable)
+      allow update: if isSignedIn() 
+        && resource.data.userId == request.auth.uid 
+        && request.resource.data.userId == request.auth.uid // userId mag niet gewijzigd worden
+        && resource.data.userId == request.resource.data.userId // eigenaar (userId) van document mag nooit gewijzigd worden
+        && resource.data.id == request.resource.data.id // document-ID (id) mag nooit gewijzigd worden
+        && resource.data.createdAt == request.resource.data.createdAt // aanmaaktijdstip (createdAt) mag nooit gewijzigd worden
+        // Validatie van de nieuwe document data
+        && request.resource.data.keys().hasAll(['id', 'name', 'userId', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['id', 'name', 'userId', 'createdAt', 'colorScheme'])
+        && request.resource.data.id is string
+        && request.resource.data.name is string 
+        && request.resource.data.name.size() > 0 
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.userId is string
+        && (request.resource.data.createdAt is int || request.resource.data.createdAt is float)
+        && (!('colorScheme' in request.resource.data) || request.resource.data.colorScheme is string);
     }
 
-    // Players Collection (globalStats)
+    // ==========================================
+    // PLAYERS COLLECTIE
+    // ==========================================
     match /players/{playerId} {
-      allow read, write: if isSignedIn();
+      // Alleen ingelogde coaches mogen spelers aanmaken en zij moeten zichzelf als eigenaar registreren
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        // Validatie van alle verplichte velden en hun datatypes
+        && request.resource.data.keys().hasAll(['id', 'name', 'number', 'position', 'totalTime', 'isRunning', 'sessions', 'stats', 'lastActions', 'userId', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['id', 'name', 'number', 'position', 'totalTime', 'isRunning', 'lastStartTime', 'sessions', 'stats', 'lastActions', 'userId', 'createdAt'])
+        && request.resource.data.id is string
+        && request.resource.data.name is string 
+        && request.resource.data.name.size() > 0 
+        && request.resource.data.name.size() <= 100 // Maximale lengte voor spelersnaam
+        && request.resource.data.number is string 
+        && request.resource.data.number.size() <= 10 // Maximaal 10 tekens voor rugnummer
+        && request.resource.data.position is string 
+        && request.resource.data.position.size() <= 50
+        && (request.resource.data.totalTime is int || request.resource.data.totalTime is float)
+        && request.resource.data.isRunning is bool
+        && request.resource.data.sessions is list
+        && request.resource.data.stats is map
+        && request.resource.data.lastActions is list
+        && request.resource.data.userId is string
+        && (request.resource.data.createdAt is int || request.resource.data.createdAt is float)
+        && (!('lastStartTime' in request.resource.data) || request.resource.data.lastStartTime == null || request.resource.data.lastStartTime is int || request.resource.data.lastStartTime is float);
+
+      // Alleen de eigenaar mag de speler lezen of verwijderen
+      allow read, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      // Alleen de eigenaar mag de speler wijzigen; diverse systeemvelden zijn onveranderbaar (immutable)
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid // userId mag niet gewijzigd worden
+        && resource.data.userId == request.resource.data.userId // eigenaar (userId) van document mag nooit gewijzigd worden
+        && resource.data.id == request.resource.data.id // document-ID (id) mag nooit gewijzigd worden
+        && resource.data.createdAt == request.resource.data.createdAt // aanmaaktijdstip (createdAt) mag nooit gewijzigd worden
+        // Validatie van alle gewijzigde velden en hun datatypes
+        && request.resource.data.keys().hasAll(['id', 'name', 'number', 'position', 'totalTime', 'isRunning', 'sessions', 'stats', 'lastActions', 'userId', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['id', 'name', 'number', 'position', 'totalTime', 'isRunning', 'lastStartTime', 'sessions', 'stats', 'lastActions', 'userId', 'createdAt'])
+        && request.resource.data.id is string
+        && request.resource.data.name is string 
+        && request.resource.data.name.size() > 0 
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.number is string 
+        && request.resource.data.number.size() <= 10
+        && request.resource.data.position is string 
+        && request.resource.data.position.size() <= 50
+        && (request.resource.data.totalTime is int || request.resource.data.totalTime is float)
+        && request.resource.data.isRunning is bool
+        && request.resource.data.sessions is list
+        && request.resource.data.stats is map
+        && request.resource.data.lastActions is list
+        && request.resource.data.userId is string
+        && (request.resource.data.createdAt is int || request.resource.data.createdAt is float)
+        && (!('lastStartTime' in request.resource.data) || request.resource.data.lastStartTime == null || request.resource.data.lastStartTime is int || request.resource.data.lastStartTime is float);
     }
 
-    // TeamPlayers (many-to-many relationship)
+    // ==========================================
+    // TEAMPLAYERS (MAPPING) COLLECTIE
+    // ==========================================
     match /teamPlayers/{docId} {
-      allow read, write: if isSignedIn();
+      // Helper om te bepalen of de ingelogde gebruiker de eigenaar is van deze koppeling
+      // Fallback is ingebouwd om teams/spelers te checken als userId nog niet op de documenten aanwezig is (achterwaartse compatibiliteit)
+      function isMappingOwner() {
+        return (resource.data.userId == request.auth.uid) || 
+               isTeamOwner(resource.data.teamId) || 
+               isPlayerOwner(resource.data.playerId);
+      }
+
+      // Alleen ingelogde gebruikers die eigenaar zijn van het gekoppelde team en de speler mogen koppelingen aanmaken
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && isTeamOwner(request.resource.data.teamId)
+        && isPlayerOwner(request.resource.data.playerId)
+        // Validatie van de mapping velden en datatypes
+        && request.resource.data.keys().hasAll(['id', 'teamId', 'playerId', 'createdAt', 'userId'])
+        && request.resource.data.keys().hasOnly(['id', 'teamId', 'playerId', 'createdAt', 'userId', 'role'])
+        && request.resource.data.id is string
+        && request.resource.data.teamId is string
+        && request.resource.data.playerId is string
+        && (request.resource.data.createdAt is int || request.resource.data.createdAt is float)
+        && request.resource.data.userId is string
+        && (!('role' in request.resource.data) || request.resource.data.role is string && request.resource.data.role.size() <= 50);
+
+      // Alleen de eigenaar mag de koppeling lezen of verwijderen
+      allow read, delete: if isSignedIn() && isMappingOwner();
+
+      // Alleen de eigenaar mag de koppeling aanpassen; diverse velden zijn onveranderbaar en de relaties worden opnieuw gecontroleerd
+      allow update: if isSignedIn()
+        && isMappingOwner()
+        && request.resource.data.userId == request.auth.uid // userId mag niet gewijzigd worden
+        && resource.data.userId == request.resource.data.userId // eigenaar (userId) van document mag nooit gewijzigd worden
+        && resource.data.id == request.resource.data.id // document-ID (id) mag nooit gewijzigd worden
+        && resource.data.createdAt == request.resource.data.createdAt // aanmaaktijdstip (createdAt) mag nooit gewijzigd worden
+        && isTeamOwner(request.resource.data.teamId) // Opnieuw verifiëren dat het nieuwe/bestaande teamId toebehoort aan de ingelogde coach
+        && isPlayerOwner(request.resource.data.playerId) // Opnieuw verifiëren dat het nieuwe/bestaande playerId toebehoort aan de ingelogde coach
+        // Validatie van de nieuwe document data
+        && request.resource.data.keys().hasAll(['id', 'teamId', 'playerId', 'createdAt', 'userId'])
+        && request.resource.data.keys().hasOnly(['id', 'teamId', 'playerId', 'createdAt', 'userId', 'role'])
+        && request.resource.data.id is string
+        && request.resource.data.teamId is string
+        && request.resource.data.playerId is string
+        && (request.resource.data.createdAt is int || request.resource.data.createdAt is float)
+        && request.resource.data.userId is string
+        && (!('role' in request.resource.data) || request.resource.data.role is string && request.resource.data.role.size() <= 50);
     }
   }
 }

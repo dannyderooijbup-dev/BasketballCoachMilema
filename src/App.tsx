@@ -3245,29 +3245,93 @@ export default function App() {
             >
               Alle Spelers
             </button>
-            {teams.map(team => (
-              <button
-                key={team.id}
-                onClick={() => {
-                  if (isMatchActive) return;
-                  setActiveTeamId(team.id);
-                }}
-                disabled={isMatchActive}
-                className={`px-3.5 py-1.5 rounded-xl font-display font-medium text-xs uppercase italic tracking-wider transition-all flex items-center gap-1.5 ${
-                  activeTeamId === team.id
-                    ? getTeamButtonColorClass(team.id)
-                    : 'bg-white/5 hover:bg-white/10 text-text-muted hover:text-white'
-                } ${isMatchActive ? 'opacity-40 cursor-not-allowed' : 'active:scale-95'}`}
-                title={isMatchActive ? "Stop de actieve wedstrijd om van team te switchen" : `Switch naar team ${team.name}`}
-              >
-                <span>{team.name}</span>
-                <span className={`text-[9px] font-bold font-mono rounded-full px-1.5 py-0.2 ${
-                  activeTeamId === team.id ? 'bg-white text-primary' : 'bg-white/10 text-text-muted'
-                }`}>
-                  {teamPlayers.filter(tp => tp.teamId === team.id).length}
-                </span>
-              </button>
-            ))}
+            {teams.map(team => {
+              const isActive = activeTeamId === team.id;
+              const isEditing = editingTeamId === team.id;
+              
+              if (isEditing) {
+                return (
+                  <div key={team.id} className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl px-2.5 py-1 shrink-0">
+                    <input
+                      type="text"
+                      value={editingTeamName}
+                      onChange={(e) => setEditingTeamName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          updateTeamName(team.id, editingTeamName);
+                        } else if (e.key === 'Escape') {
+                          setEditingTeamId(null);
+                        }
+                      }}
+                      className="bg-transparent text-white font-sans text-xs focus:outline-none w-24 sm:w-32"
+                      placeholder="Team..."
+                      autoFocus
+                      disabled={isSavingTeamName}
+                      maxLength={100}
+                    />
+                    <button
+                      onClick={() => updateTeamName(team.id, editingTeamName)}
+                      disabled={isSavingTeamName}
+                      className="text-emerald-400 hover:text-emerald-300 p-1 rounded hover:bg-white/5 transition-colors cursor-pointer text-[10px] font-bold uppercase font-sans shrink-0"
+                      title="Opslaan"
+                    >
+                      {isSavingTeamName ? '...' : 'OK'}
+                    </button>
+                    <button
+                      onClick={() => setEditingTeamId(null)}
+                      disabled={isSavingTeamName}
+                      className="text-text-muted hover:text-white p-1 rounded hover:bg-white/5 transition-colors cursor-pointer shrink-0"
+                      title="Annuleren"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={team.id} className="relative group shrink-0 flex items-center">
+                  <button
+                    key={team.id}
+                    onClick={() => {
+                      if (isMatchActive) return;
+                      setActiveTeamId(team.id);
+                    }}
+                    disabled={isMatchActive}
+                    className={`pl-3.5 pr-8 py-1.5 rounded-xl font-display font-medium text-xs uppercase italic tracking-wider transition-all flex items-center gap-1.5 ${
+                      isActive
+                        ? getTeamButtonColorClass(team.id)
+                        : 'bg-white/5 hover:bg-white/10 text-text-muted hover:text-white'
+                    } ${isMatchActive ? 'opacity-40 cursor-not-allowed' : 'active:scale-95'}`}
+                    title={isMatchActive ? "Stop de actieve wedstrijd om van team te switchen" : `Switch naar team ${team.name}`}
+                  >
+                    <span className="truncate max-w-[100px] sm:max-w-[150px]">{team.name}</span>
+                    <span className={`text-[9px] font-bold font-mono rounded-full px-1.5 py-0.2 shrink-0 ${
+                      isActive ? 'bg-white text-primary' : 'bg-white/10 text-text-muted'
+                    }`}>
+                      {teamPlayers.filter(tp => tp.teamId === team.id).length}
+                    </span>
+                  </button>
+                  {!isMatchActive && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingTeamId(team.id);
+                        setEditingTeamName(team.name);
+                      }}
+                      className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 ${
+                        isActive
+                          ? 'text-white/60 hover:text-white hover:bg-white/10'
+                          : 'text-text-muted hover:text-white hover:bg-white/10'
+                      }`}
+                      title="Teamnaam bewerken"
+                    >
+                      <Pencil size={11} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
             {isMatchActive && (
               <span className="text-[10px] text-red-500 font-black uppercase italic tracking-widest pl-2 bg-red-500/10 py-1.5 px-3 rounded-lg border border-red-500/20 whitespace-nowrap animate-pulse">
                 Wedstrijd Actief

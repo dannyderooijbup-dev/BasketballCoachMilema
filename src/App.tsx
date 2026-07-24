@@ -2560,11 +2560,10 @@ export default function App() {
                    <StatButton label="FT" value={`${player.stats.ftm}/${player.stats.fta}`} onAdd={() => updateStat(player.id, 'ftm', 1)} onSub={() => updateStat(player.id, 'fta', 1)} isSpecial />
                  </div>
                  
-                 <div className="grid grid-cols-2 xs:grid-cols-3 gap-2 sm:gap-3">
+                 <div className="grid grid-cols-2 xs:grid-cols-4 gap-2 sm:gap-3">
                    <StatControl label="AST" value={player.stats.assists} onAdd={() => updateStat(player.id, 'assists', 1)} onSub={() => updateStat(player.id, 'assists', -1)} />
                    <StatControl label="DEF REB" value={player.stats.defReb || 0} onAdd={() => updateStat(player.id, 'defReb', 1)} onSub={() => updateStat(player.id, 'defReb', -1)} />
                    <StatControl label="OFF REB" value={player.stats.offReb || 0} onAdd={() => updateStat(player.id, 'offReb', 1)} onSub={() => updateStat(player.id, 'offReb', -1)} />
-                   <StatControl label="TEAM REB" value={player.stats.teamReb || 0} onAdd={() => updateStat(player.id, 'teamReb', 1)} onSub={() => updateStat(player.id, 'teamReb', -1)} />
                    <StatControl label="STL" value={player.stats.steals} onAdd={() => updateStat(player.id, 'steals', 1)} onSub={() => updateStat(player.id, 'steals', -1)} />
                    <StatControl label="BLK" value={player.stats.blocks} onAdd={() => updateStat(player.id, 'blocks', 1)} onSub={() => updateStat(player.id, 'blocks', -1)} />
                    <StatControl label="TO" value={player.stats.turnovers} onAdd={() => updateStat(player.id, 'turnovers', 1)} onSub={() => updateStat(player.id, 'turnovers', -1)} />

@@ -198,8 +198,13 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
 
       {/* Main Logo Header */}
       <div className="mb-8 text-center z-10">
-        <div className="inline-flex p-4 rounded-3xl bg-surface/50 border border-white/5 shadow-inner mb-4">
-          <Trophy size={42} className="text-primary animate-pulse" />
+        <div className="inline-flex p-1.5 rounded-3xl bg-surface/50 border border-white/5 shadow-inner mb-4">
+          <img 
+            src="/logo.png" 
+            alt="Basketball Coach Logo" 
+            className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover shadow-lg" 
+            referrerPolicy="no-referrer"
+          />
         </div>
         <h1 className="text-3xl sm:text-4xl font-black font-display italic uppercase tracking-tighter leading-none mb-2">
           <span className="text-white">Basketball</span>

@@ -3984,18 +3984,26 @@ function HistoryStat({ label, value }: { label: string, value: number | string }
 
 function Logo() {
   return (
-    <div className="flex flex-col items-start select-none">
-      <div className="flex items-baseline gap-1">
-        <h1 className="text-lg sm:text-2xl font-black font-display italic uppercase tracking-tighter leading-none">
-          <span className="text-white">Basketball</span>
-          <span className="text-primary ml-1">Coach</span>
-        </h1>
-      </div>
-      <div className="mt-1 flex items-center gap-1.5">
-        <span className="text-[9px] sm:text-[11px] font-black text-text-muted uppercase tracking-[0.25em] font-sans">
-          Game <span className="text-primary font-bold">Stats</span>
-        </span>
-        <div className="h-[1px] w-3 bg-primary/30 rounded-full"></div>
+    <div className="flex items-center gap-2.5 select-none">
+      <img 
+        src="/logo.png" 
+        alt="Logo" 
+        className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg object-cover shadow border border-white/10 shrink-0" 
+        referrerPolicy="no-referrer"
+      />
+      <div className="flex flex-col items-start">
+        <div className="flex items-baseline gap-1">
+          <h1 className="text-base sm:text-xl font-black font-display italic uppercase tracking-tighter leading-none">
+            <span className="text-white">Basketball</span>
+            <span className="text-primary ml-1">Coach</span>
+          </h1>
+        </div>
+        <div className="mt-0.5 flex items-center gap-1">
+          <span className="text-[8px] sm:text-[9.5px] font-black text-text-muted uppercase tracking-[0.2em] font-sans">
+            Game <span className="text-primary font-bold">Stats</span>
+          </span>
+          <div className="h-[1px] w-2.5 bg-primary/30 rounded-full"></div>
+        </div>
       </div>
     </div>
   );

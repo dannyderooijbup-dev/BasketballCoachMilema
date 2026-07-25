@@ -2039,7 +2039,7 @@ export default function App() {
                           setEditingTeamId(team.id);
                           setEditingTeamName(team.name);
                         }}
-                        className="text-text-muted hover:text-white p-1.5 rounded-lg hover:bg-white/5 opacity-0 group-hover/title:opacity-100 focus:opacity-100 transition-all cursor-pointer shrink-0"
+                        className="text-text-muted hover:text-white p-1.5 rounded-lg hover:bg-white/5 opacity-100 sm:opacity-0 sm:group-hover/title:opacity-100 focus:opacity-100 transition-all cursor-pointer shrink-0"
                         title="Naam bewerken"
                       >
                         <Pencil size={14} />
@@ -3319,7 +3319,7 @@ export default function App() {
                         setEditingTeamId(team.id);
                         setEditingTeamName(team.name);
                       }}
-                      className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 ${
+                      className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded transition-all cursor-pointer opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 ${
                         isActive
                           ? 'text-white/60 hover:text-white hover:bg-white/10'
                           : 'text-text-muted hover:text-white hover:bg-white/10'

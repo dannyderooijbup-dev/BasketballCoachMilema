@@ -51,6 +51,7 @@ const sendRegistrationEmail = async (email: string, name?: string, uid?: string)
 
 export default function AuthScreen({ onSuccess }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>('login');
+  const [logoError, setLogoError] = useState(false);
   
   // Form input states
   const [email, setEmail] = useState('');
@@ -199,12 +200,19 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
       {/* Main Logo Header */}
       <div className="mb-8 text-center z-10">
         <div className="inline-flex p-1.5 rounded-3xl bg-surface/50 border border-white/5 shadow-inner mb-4">
-          <img 
-            src="/logo.png" 
-            alt="Basketball Coach Logo" 
-            className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover shadow-lg" 
-            referrerPolicy="no-referrer"
-          />
+          {!logoError ? (
+            <img 
+              src="/logo.png?v=1" 
+              alt="Basketball Coach Logo" 
+              className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover shadow-lg" 
+              referrerPolicy="no-referrer"
+              onError={() => setLogoError(true)}
+            />
+          ) : (
+            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-primary/10 text-primary flex items-center justify-center border border-primary/20 shadow-lg">
+              <Trophy size={42} className="text-primary" />
+            </div>
+          )}
         </div>
         <h1 className="text-3xl sm:text-4xl font-black font-display italic uppercase tracking-tighter leading-none mb-2">
           <span className="text-white">Basketball</span>

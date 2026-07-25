@@ -3983,14 +3983,23 @@ function HistoryStat({ label, value }: { label: string, value: number | string }
 }
 
 function Logo() {
+  const [imgError, setImgError] = useState(false);
+
   return (
     <div className="flex items-center gap-2.5 select-none">
-      <img 
-        src="/logo.png" 
-        alt="Logo" 
-        className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg object-cover shadow border border-white/10 shrink-0" 
-        referrerPolicy="no-referrer"
-      />
+      {!imgError ? (
+        <img 
+          src="/logo.png?v=1" 
+          alt="Logo" 
+          className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg object-cover shadow border border-white/10 shrink-0" 
+          referrerPolicy="no-referrer"
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center border border-primary/20 shrink-0 shadow">
+          <Trophy size={16} className="text-primary" />
+        </div>
+      )}
       <div className="flex flex-col items-start">
         <div className="flex items-baseline gap-1">
           <h1 className="text-base sm:text-xl font-black font-display italic uppercase tracking-tighter leading-none">

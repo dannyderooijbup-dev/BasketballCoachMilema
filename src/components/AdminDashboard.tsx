@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { AdminUser, UserRole, UserMembership } from '../types';
 import { 
@@ -61,6 +61,13 @@ export default function AdminDashboard({ isAdmin }: AdminDashboardProps) {
             approvedBy: null
           };
           const role: UserRole = (data.role as UserRole) || 'user';
+
+          // Automatic one-time migration in Firestore for existing users missing the role field
+          if (!data.role) {
+            setDoc(docSnap.ref, { role: 'user' }, { merge: true }).catch((err) =>
+              console.error('Fout bij automatische role migratie:', err)
+            );
+          }
 
           return {
             id: docSnap.id,

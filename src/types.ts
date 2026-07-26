@@ -65,7 +65,17 @@ export interface MatchHistoryEntry {
 export const SEASONS = ['2026/2027', '2025/2026', '2024/2025'];
 export const DEFAULT_SEASON = '2026/2027';
 
-export type Tab = 'dashboard' | 'history' | 'players' | 'season' | 'account' | 'teams';
+export type Tab = 'dashboard' | 'history' | 'players' | 'season' | 'account' | 'teams' | 'admin';
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  naam: string;
+  club: string;
+  role: UserRole;
+  membership: UserMembership;
+  lastLogin?: number | null;
+}
 
 export interface Team {
   id: string;
@@ -82,6 +92,8 @@ export interface TeamPlayer {
   createdAt: number;
   role?: string;
 }
+
+export type UserRole = 'admin' | 'user';
 
 export interface UserMembership {
   status: string;

@@ -28,9 +28,10 @@ import {
   Sun,
   Moon,
   Clock,
-  RefreshCw
+  RefreshCw,
+  ShieldCheck
 } from 'lucide-react';
-import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, SEASONS, DEFAULT_SEASON, DEFAULT_MEMBERSHIP, UserMembership } from './types';
+import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, SEASONS, DEFAULT_SEASON, DEFAULT_MEMBERSHIP, UserMembership, UserRole } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
 import { exportMatchToPDF, exportSeasonStatsToPDF } from './pdfUtils';
 import { User } from 'firebase/auth';
@@ -50,6 +51,7 @@ import {
 import { useAuth } from './AuthContext';
 import AuthScreen from './components/AuthScreen';
 import AccountScreen from './components/AccountScreen';
+import AdminDashboard from './components/AdminDashboard';
 import { db } from './firebase';
 
 const generateId = () => {
@@ -63,8 +65,12 @@ export default function App() {
   const { currentUser, loading: loadingAuth, logout } = useAuth();
   const [loadingSync, setLoadingSync] = useState(false);
   const [membership, setMembership] = useState<UserMembership | null>(null);
+  const [userRole, setUserRole] = useState<UserRole>('user');
   const [isCheckingMembership, setIsCheckingMembership] = useState(false);
   const hasSyncedFromFirestore = useRef(false);
+
+  // Central permissions helper: returns true if the user's Firestore role is 'admin'
+  const isAdmin = () => userRole === 'admin';
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     return (localStorage.getItem('app-theme') as 'dark' | 'light') || 'dark';
@@ -755,12 +761,13 @@ export default function App() {
     if (!currentUser) {
       hasSyncedFromFirestore.current = false;
       setMembership(null);
+      setUserRole('user');
       return;
     }
 
     const userDocRef = doc(db, 'users', currentUser.uid);
 
-    // Set up real-time listener for user document (real-time membership status updates)
+    // Set up real-time listener for user document (real-time membership and role status updates)
     const unsubscribeUser = onSnapshot(userDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const userData = docSnap.data();
@@ -768,6 +775,11 @@ export default function App() {
           setMembership(userData.membership);
         } else {
           setMembership(DEFAULT_MEMBERSHIP);
+        }
+        if (userData.role) {
+          setUserRole(userData.role as UserRole);
+        } else {
+          setUserRole('user');
         }
       }
     }, (err) => {
@@ -783,12 +795,28 @@ export default function App() {
         if (docSnap.exists()) {
           data = docSnap.data();
 
-          // Ensure membership object exists on existing user documents
+          // Migrate existing users without a membership object
           if (!data.membership) {
-            await setDoc(userDocRef, { membership: DEFAULT_MEMBERSHIP }, { merge: true });
-            setMembership(DEFAULT_MEMBERSHIP);
+            const migratedMembership: UserMembership = {
+              status: 'active',
+              type: 'coach',
+              trialStart: null,
+              trialEnd: null,
+              approvedAt: Date.now(),
+              approvedBy: 'migration'
+            };
+            await setDoc(userDocRef, { membership: migratedMembership }, { merge: true });
+            setMembership(migratedMembership);
           } else {
             setMembership(data.membership);
+          }
+
+          // Migrate existing users without a role field
+          if (!data.role) {
+            await setDoc(userDocRef, { role: 'user' }, { merge: true });
+            setUserRole('user');
+          } else {
+            setUserRole(data.role as UserRole);
           }
 
           if (Array.isArray(data.wedstrijden)) {
@@ -877,6 +905,7 @@ export default function App() {
               teamCount: 0
             },
             membership: DEFAULT_MEMBERSHIP,
+            role: 'user',
             spelers: players,
             wedstrijden: history,
             instellingen: {
@@ -1090,6 +1119,11 @@ export default function App() {
           setMembership(data.membership);
         } else {
           setMembership(DEFAULT_MEMBERSHIP);
+        }
+        if (data.role) {
+          setUserRole(data.role as UserRole);
+        } else {
+          setUserRole('user');
         }
       }
     } catch (err) {
@@ -3300,6 +3334,9 @@ export default function App() {
           <TabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={18} />} label="Seizoen" />
           <TabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={18} />} label="Teams" />
           <TabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={18} />} label="Account" />
+          {isAdmin() && (
+            <TabButton active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<ShieldCheck size={18} className="text-amber-400" />} label="Admin" />
+          )}
         </div>
 
         <div className="flex items-center gap-2.5">
@@ -3473,7 +3510,12 @@ export default function App() {
             onLogout={handleLogout}
             theme={theme}
             onThemeChange={setTheme}
+            systemRole={userRole}
+            isAdmin={isAdmin()}
           />
+        )}
+        {activeTab === 'admin' && isAdmin() && (
+          <AdminDashboard isAdmin={isAdmin()} />
         )}
       </main>
 
@@ -3484,6 +3526,9 @@ export default function App() {
         <MobileTabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={20} />} label="Stats" />
         <MobileTabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={20} />} label="Teams" />
         <MobileTabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={20} />} label="Account" />
+        {isAdmin() && (
+          <MobileTabButton active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<ShieldCheck size={20} className="text-amber-400" />} label="Admin" />
+        )}
       </nav>
 
       {/* Footer */}

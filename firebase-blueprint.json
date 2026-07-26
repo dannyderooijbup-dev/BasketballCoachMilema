@@ -13,6 +13,10 @@
               "type": "map",
               "description": "Membership status, type, trial, and approval details"
             },
+            "role": {
+              "type": "string",
+              "description": "System role of the user ('admin' or 'user')"
+            },
             "spelers": {
               "type": "array",
               "description": "List of tracked basketball players and their stats"

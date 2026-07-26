@@ -7,6 +7,7 @@ import {
 } from 'firebase/auth';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { auth, googleProvider, db } from '../firebase';
+import { UserRole } from '../types';
 import { 
   User as UserIcon, 
   Mail, 
@@ -23,7 +24,8 @@ import {
   Eye,
   EyeOff,
   Sun,
-  Moon
+  Moon,
+  ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -37,6 +39,8 @@ interface AccountScreenProps {
   onLogout: () => Promise<void>;
   theme: 'dark' | 'light';
   onThemeChange: (theme: 'dark' | 'light') => void;
+  systemRole?: UserRole;
+  isAdmin?: boolean;
 }
 
 export default function AccountScreen({
@@ -48,7 +52,9 @@ export default function AccountScreen({
   onSaveProfile,
   onLogout,
   theme,
-  onThemeChange
+  onThemeChange,
+  systemRole = 'user',
+  isAdmin = false
 }: AccountScreenProps) {
   // Local state for draft profile settings
   const [localName, setLocalName] = useState(name);
@@ -233,10 +239,20 @@ export default function AccountScreen({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Left Side: Coach Profile */}
         <div className="bg-surface/55 border border-white/5 shadow-xl rounded-3xl p-6 sm:p-8 space-y-6">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <UserIcon size={18} className="text-primary" />
-            Coach Profiel
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <UserIcon size={18} className="text-primary" />
+              Coach Profiel
+            </h3>
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
+              isAdmin 
+                ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' 
+                : 'bg-white/5 border-white/10 text-text-muted'
+            }`}>
+              <ShieldCheck size={12} />
+              <span>Systeemrol: {isAdmin ? 'Beheerder (Admin)' : 'Gebruiker'}</span>
+            </span>
+          </div>
 
           <div className="space-y-4">
             {/* Email Address (Read-only) */}

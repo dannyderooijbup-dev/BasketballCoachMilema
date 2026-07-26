@@ -26,9 +26,11 @@ import {
   Shield,
   Briefcase,
   Sun,
-  Moon
+  Moon,
+  Clock,
+  RefreshCw
 } from 'lucide-react';
-import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, SEASONS, DEFAULT_SEASON } from './types';
+import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, SEASONS, DEFAULT_SEASON, DEFAULT_MEMBERSHIP, UserMembership } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
 import { exportMatchToPDF, exportSeasonStatsToPDF } from './pdfUtils';
 import { User } from 'firebase/auth';
@@ -42,7 +44,8 @@ import {
   where, 
   deleteDoc, 
   writeBatch,
-  updateDoc 
+  updateDoc,
+  onSnapshot 
 } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import AuthScreen from './components/AuthScreen';
@@ -59,6 +62,8 @@ const generateId = () => {
 export default function App() {
   const { currentUser, loading: loadingAuth, logout } = useAuth();
   const [loadingSync, setLoadingSync] = useState(false);
+  const [membership, setMembership] = useState<UserMembership | null>(null);
+  const [isCheckingMembership, setIsCheckingMembership] = useState(false);
   const hasSyncedFromFirestore = useRef(false);
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -745,22 +750,47 @@ export default function App() {
     initialLoadDone.current = true;
   }, []);
 
-  // Firestore Sync & Migration Hook
+  // Firestore Sync & Migration Hook + Realtime Listener
   useEffect(() => {
     if (!currentUser) {
       hasSyncedFromFirestore.current = false;
+      setMembership(null);
       return;
     }
+
+    const userDocRef = doc(db, 'users', currentUser.uid);
+
+    // Set up real-time listener for user document (real-time membership status updates)
+    const unsubscribeUser = onSnapshot(userDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const userData = docSnap.data();
+        if (userData.membership) {
+          setMembership(userData.membership);
+        } else {
+          setMembership(DEFAULT_MEMBERSHIP);
+        }
+      }
+    }, (err) => {
+      console.error("Fout bij real-time luisteren naar gebruikersdocument:", err);
+    });
 
     const syncWithFirestore = async () => {
       setLoadingSync(true);
       try {
-        const userDocRef = doc(db, 'users', currentUser.uid);
         const docSnap = await getDoc(userDocRef);
         let data: any = null;
 
         if (docSnap.exists()) {
           data = docSnap.data();
+
+          // Ensure membership object exists on existing user documents
+          if (!data.membership) {
+            await setDoc(userDocRef, { membership: DEFAULT_MEMBERSHIP }, { merge: true });
+            setMembership(DEFAULT_MEMBERSHIP);
+          } else {
+            setMembership(data.membership);
+          }
+
           if (Array.isArray(data.wedstrijden)) {
             setHistory(data.wedstrijden);
             localStorage.setItem('matchesHistory', JSON.stringify(data.wedstrijden));
@@ -846,6 +876,7 @@ export default function App() {
               migratedAt: Date.now(),
               teamCount: 0
             },
+            membership: DEFAULT_MEMBERSHIP,
             spelers: players,
             wedstrijden: history,
             instellingen: {
@@ -1029,17 +1060,44 @@ export default function App() {
       }
     };
 
+    let checkInterval: any = null;
     if (initialLoadDone.current) {
       syncWithFirestore();
     } else {
-      const checkInterval = setInterval(() => {
+      checkInterval = setInterval(() => {
         if (initialLoadDone.current) {
           clearInterval(checkInterval);
           syncWithFirestore();
         }
       }, 50);
     }
+
+    return () => {
+      if (checkInterval) clearInterval(checkInterval);
+      unsubscribeUser();
+    };
   }, [currentUser]);
+
+  const handleRefreshMembership = async () => {
+    if (!currentUser) return;
+    setIsCheckingMembership(true);
+    try {
+      const userDocRef = doc(db, 'users', currentUser.uid);
+      const docSnap = await getDoc(userDocRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.membership) {
+          setMembership(data.membership);
+        } else {
+          setMembership(DEFAULT_MEMBERSHIP);
+        }
+      }
+    } catch (err) {
+      console.error("Fout bij vernieuwen van membership status:", err);
+    } finally {
+      setTimeout(() => setIsCheckingMembership(false), 500);
+    }
+  };
 
   // Save changes to localStorage AND Firestore
   useEffect(() => {
@@ -3174,6 +3232,57 @@ export default function App() {
       <div className="min-h-screen bg-dark flex flex-col items-center justify-center p-4">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
         <p className="text-text-muted font-mono uppercase tracking-widest text-[10px] sm:text-xs">Gegevens synchroniseren...</p>
+      </div>
+    );
+  }
+
+  if (membership?.status === 'pending') {
+    return (
+      <div className="min-h-screen bg-dark flex flex-col items-center justify-center p-4 select-none">
+        <div className="w-full max-w-md bg-surface border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md text-center flex flex-col items-center">
+          <div className="mb-6">
+            <Logo />
+          </div>
+
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center mb-5 shadow-lg animate-pulse">
+            <Clock size={32} />
+          </div>
+
+          <h2 className="text-xl sm:text-2xl font-black font-display italic uppercase tracking-tight text-white mb-3">
+            Account wacht op goedkeuring
+          </h2>
+
+          <div className="text-sm text-text-muted space-y-3 leading-relaxed mb-8">
+            <p className="font-semibold text-white/90">
+              Bedankt voor je registratie.
+            </p>
+            <p>
+              Je account is succesvol aangemaakt en wacht momenteel op goedkeuring door een beheerder.
+            </p>
+            <p>
+              Zodra je account is geactiveerd krijg je direct toegang tot Basketball Coach GameStats.
+            </p>
+          </div>
+
+          <div className="w-full flex flex-col sm:flex-row items-center gap-3">
+            <button
+              onClick={handleRefreshMembership}
+              disabled={isCheckingMembership}
+              className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-primary hover:bg-primary-hover text-white font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg shadow-primary/20 disabled:opacity-50 cursor-pointer"
+            >
+              <RefreshCw size={16} className={isCheckingMembership ? "animate-spin" : ""} />
+              <span>Vernieuwen</span>
+            </button>
+
+            <button
+              onClick={handleLogout}
+              className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-sm border border-white/10 flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
+            >
+              <LogOut size={16} />
+              <span>Uitloggen</span>
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

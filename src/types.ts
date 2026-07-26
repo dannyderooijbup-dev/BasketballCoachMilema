@@ -83,3 +83,21 @@ export interface TeamPlayer {
   role?: string;
 }
 
+export interface UserMembership {
+  status: string;
+  type: string;
+  trialStart: number | null;
+  trialEnd: number | null;
+  approvedAt: number | null;
+  approvedBy: string | null;
+}
+
+export const DEFAULT_MEMBERSHIP: UserMembership = {
+  status: 'pending',
+  type: 'pending',
+  trialStart: null,
+  trialEnd: null,
+  approvedAt: null,
+  approvedBy: null
+};
+

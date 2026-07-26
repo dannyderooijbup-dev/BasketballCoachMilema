@@ -9,6 +9,10 @@
               "type": "map",
               "description": "User profile details like email and last active timestamp"
             },
+            "membership": {
+              "type": "map",
+              "description": "Membership status, type, trial, and approval details"
+            },
             "spelers": {
               "type": "array",
               "description": "List of tracked basketball players and their stats"

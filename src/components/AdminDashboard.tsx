@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, setDoc, doc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { AdminUser, UserRole, UserMembership } from '../types';
+import { startTrial } from '../services/membershipService';
 import { 
   Users, 
   Clock, 
@@ -26,7 +27,8 @@ import {
   Info,
   Layers,
   ArrowUpRight,
-  Shield
+  Shield,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -57,8 +59,9 @@ export default function AdminDashboard({ isAdmin, currentUserId }: AdminDashboar
   // Selected user for management side-panel (drawer/bottom-sheet)
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
 
-  // Confirmation dialog state
+  // Confirmation dialog & loading state
   const [confirmDialog, setConfirmDialog] = useState<ActionConfirmation | null>(null);
+  const [isExecutingAction, setIsExecutingAction] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Toast auto-hide timer
@@ -208,10 +211,33 @@ export default function AdminDashboard({ isAdmin, currentUserId }: AdminDashboar
     setConfirmDialog(action);
   };
 
-  const handleConfirmActionDemo = () => {
-    if (!confirmDialog) return;
-    setToastMessage(`[Demo Status] Actie "${confirmDialog.actionLabel}" voorbereid! In de volgende stap wordt dit verwerkt.`);
-    setConfirmDialog(null);
+  const handleConfirmAction = async () => {
+    if (!confirmDialog || !selectedUser) return;
+
+    const adminUid = currentUserId || auth.currentUser?.uid;
+    if (!adminUid) {
+      setError('Sessie-fout: Geen geldige beheerder UID gevonden.');
+      return;
+    }
+
+    setIsExecutingAction(true);
+    try {
+      if (confirmDialog.targetValue === 'trial') {
+        await startTrial(adminUid, selectedUser.id, selectedUser.membership);
+        setToastMessage(`Proefperiode van 14 dagen succesvol gestart voor ${selectedUser.naam || selectedUser.email}!`);
+      } else {
+        setToastMessage(`Actie "${confirmDialog.actionLabel}" voorbereid.`);
+      }
+
+      // Sluit automatisch het beheerpaneel en de bevestigingsdialoog
+      setConfirmDialog(null);
+      setSelectedUser(null);
+    } catch (err: any) {
+      console.error('Fout bij uitvoeren van beheerdersactie:', err);
+      setError(`Fout bij verwerken actie: ${err?.message || err}`);
+    } finally {
+      setIsExecutingAction(false);
+    }
   };
 
   const isSelf = selectedUser ? selectedUser.id === currentUserId : false;
@@ -990,7 +1016,7 @@ export default function AdminDashboard({ isAdmin, currentUserId }: AdminDashboar
                     {confirmDialog.title}
                   </h3>
                   <span className="text-[11px] font-mono text-primary">
-                    Bevestigingsstap (Voorbereiding)
+                    Bevestigingsstap
                   </span>
                 </div>
               </div>
@@ -1014,23 +1040,32 @@ export default function AdminDashboard({ isAdmin, currentUserId }: AdminDashboar
                 <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 text-primary text-[11px] flex items-center gap-2">
                   <Info size={14} className="flex-shrink-0" />
                   <span>
-                    In de volgende stap wordt deze actie rechtstreeks doorgestuurd naar Firestore.
+                    Deze actie wordt direct uitgevoerd in Firestore en vastgelegd in de auditlog.
                   </span>
                 </div>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
+                  disabled={isExecutingAction}
                   onClick={() => setConfirmDialog(null)}
-                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-text-muted hover:text-white text-xs font-bold transition-all cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-text-muted hover:text-white text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
                 >
                   Annuleren
                 </button>
                 <button
-                  onClick={handleConfirmActionDemo}
-                  className="px-5 py-2 rounded-xl bg-primary text-slate-950 font-black text-xs hover:bg-primary-hover transition-all active:scale-95 cursor-pointer shadow-lg shadow-primary/20"
+                  disabled={isExecutingAction}
+                  onClick={handleConfirmAction}
+                  className="px-5 py-2 rounded-xl bg-primary text-slate-950 font-black text-xs hover:bg-primary-hover transition-all active:scale-95 cursor-pointer shadow-lg shadow-primary/20 flex items-center gap-2 disabled:opacity-50"
                 >
-                  Bevestigen (Demo)
+                  {isExecutingAction ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Verwerken...</span>
+                    </>
+                  ) : (
+                    <span>Bevestigen</span>
+                  )}
                 </button>
               </div>
             </motion.div>

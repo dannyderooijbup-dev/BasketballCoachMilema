@@ -36,6 +36,11 @@ service cloud.firestore {
       return isSignedIn() && getPlayer(playerId).userId == request.auth.uid;
     }
 
+    // Controleert of de ingelogde gebruiker beheerder is (role == 'admin')
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
     // Standaard deny-all regel om ongeautoriseerde toegang tot onbekende collecties te voorkomen
     match /{document=**} {
       allow read, write: if false;
@@ -45,8 +50,16 @@ service cloud.firestore {
     // USERS COLLECTIE
     // ==========================================
     match /users/{userId} {
-      // Alleen de eigenaar mag zijn eigen profiel, instellingen en data inzien, aanmaken, wijzigen of verwijderen
-      allow read, write: if isOwner(userId);
+      // Eigenaar mag eigen gegevens beheren; admins mogen alle gebruikersprofielen lezen en bewerken
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+
+    // ==========================================
+    // AUDIT LOGS COLLECTIE
+    // ==========================================
+    match /audit_logs/{logId} {
+      // Alleen beheerders mogen audit logs inzien en toevoegen
+      allow read, create: if isAdmin();
     }
 
     // ==========================================

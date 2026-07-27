@@ -76,6 +76,21 @@
           }
         }
       }
+    },
+    "audit_logs": {
+      "description": "Collection of system audit logs for administrative actions",
+      "documents": {
+        "{logId}": {
+          "schema": {
+            "timestamp": { "type": "number" },
+            "adminUid": { "type": "string" },
+            "targetUid": { "type": "string" },
+            "action": { "type": "string" },
+            "oldValue": { "type": "map" },
+            "newValue": { "type": "map" }
+          }
+        }
+      }
     }
   }
 }

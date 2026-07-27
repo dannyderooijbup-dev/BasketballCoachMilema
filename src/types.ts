@@ -74,7 +74,10 @@ export interface AdminUser {
   club: string;
   role: UserRole;
   membership: UserMembership;
+  createdAt?: number | null;
   lastLogin?: number | null;
+  teamCount?: number;
+  playerCount?: number;
 }
 
 export interface Team {

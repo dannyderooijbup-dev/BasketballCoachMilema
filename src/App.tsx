@@ -3515,7 +3515,7 @@ export default function App() {
           />
         )}
         {activeTab === 'admin' && isAdmin() && (
-          <AdminDashboard isAdmin={isAdmin()} />
+          <AdminDashboard isAdmin={isAdmin()} currentUserId={currentUser?.uid} />
         )}
       </main>
 

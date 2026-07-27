@@ -2,7 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, setDoc, doc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { AdminUser, UserRole, UserMembership } from '../types';
-import { startTrial } from '../services/membershipService';
+import { 
+  startTrial, 
+  activateCoach, 
+  activateClub, 
+  resetToPending, 
+  suspendMembership, 
+  reactivateMembership, 
+  changeRole 
+} from '../services/membershipService';
 import { 
   Users, 
   Clock, 
@@ -28,7 +36,9 @@ import {
   Layers,
   ArrowUpRight,
   Shield,
-  Loader2
+  Loader2,
+  Ban,
+  PlayCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -222,11 +232,42 @@ export default function AdminDashboard({ isAdmin, currentUserId }: AdminDashboar
 
     setIsExecutingAction(true);
     try {
-      if (confirmDialog.targetValue === 'trial') {
-        await startTrial(adminUid, selectedUser.id, selectedUser.membership);
-        setToastMessage(`Proefperiode van 14 dagen succesvol gestart voor ${selectedUser.naam || selectedUser.email}!`);
+      const userName = selectedUser.naam || selectedUser.email;
+
+      if (confirmDialog.type === 'role') {
+        const newRole = confirmDialog.targetValue as UserRole;
+        await changeRole(adminUid, selectedUser.id, newRole, selectedUser.role);
+        setToastMessage(`Systeemrol van ${userName} succesvol gewijzigd naar '${newRole}'!`);
       } else {
-        setToastMessage(`Actie "${confirmDialog.actionLabel}" voorbereid.`);
+        switch (confirmDialog.targetValue) {
+          case 'trial':
+            await startTrial(adminUid, selectedUser.id, selectedUser.membership);
+            setToastMessage(`Proefperiode van 14 dagen succesvol gestart voor ${userName}!`);
+            break;
+          case 'coach':
+            await activateCoach(adminUid, selectedUser.id, selectedUser.membership);
+            setToastMessage(`Coach lidmaatschap succesvol geactiveerd voor ${userName}!`);
+            break;
+          case 'club':
+            await activateClub(adminUid, selectedUser.id, selectedUser.membership);
+            setToastMessage(`Club lidmaatschap succesvol geactiveerd voor ${userName}!`);
+            break;
+          case 'pending':
+            await resetToPending(adminUid, selectedUser.id, selectedUser.membership);
+            setToastMessage(`Lidmaatschap van ${userName} succesvol teruggezet naar Pending!`);
+            break;
+          case 'suspend':
+            await suspendMembership(adminUid, selectedUser.id, selectedUser.membership);
+            setToastMessage(`Lidmaatschap van ${userName} succesvol opgeschort!`);
+            break;
+          case 'reactivate':
+            await reactivateMembership(adminUid, selectedUser.id, selectedUser.membership);
+            setToastMessage(`Lidmaatschap van ${userName} succesvol hergeactiveerd!`);
+            break;
+          default:
+            console.warn('Onbekende actie targetValue:', confirmDialog.targetValue);
+            break;
+        }
       }
 
       // Sluit automatisch het beheerpaneel en de bevestigingsdialoog
@@ -832,6 +873,60 @@ export default function AdminDashboard({ isAdmin, currentUserId }: AdminDashboar
                         </div>
                       </div>
                       <ArrowUpRight size={16} className="text-amber-400 opacity-60 group-hover:opacity-100 transition-opacity" />
+                    </button>
+
+                    {/* Schort lidmaatschap op */}
+                    <button
+                      onClick={() => handleTriggerAction({
+                        type: 'membership',
+                        title: 'Lidmaatschap Opschorten',
+                        actionLabel: 'Schort lidmaatschap op',
+                        targetValue: 'suspend',
+                        description: `Hiermee wordt het account van ${selectedUser.naam || selectedUser.email} tijdelijk op geschorst (suspended) gezet.`
+                      })}
+                      className="p-3.5 rounded-2xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-left transition-all group cursor-pointer flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-red-500/20 text-red-400 flex items-center justify-center flex-shrink-0">
+                          <Ban size={18} />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-white group-hover:text-red-300 transition-colors">
+                            Schort lidmaatschap op
+                          </div>
+                          <div className="text-[11px] text-text-muted">
+                            Blokkeer toegang tijdelijk (status: suspended)
+                          </div>
+                        </div>
+                      </div>
+                      <ArrowUpRight size={16} className="text-red-400 opacity-60 group-hover:opacity-100 transition-opacity" />
+                    </button>
+
+                    {/* Heractiveer lidmaatschap */}
+                    <button
+                      onClick={() => handleTriggerAction({
+                        type: 'membership',
+                        title: 'Lidmaatschap Heractiveren',
+                        actionLabel: 'Heractiveer lidmaatschap',
+                        targetValue: 'reactivate',
+                        description: `Hiermee wordt het geschorste of inactieve account van ${selectedUser.naam || selectedUser.email} opnieuw op 'active' gezet.`
+                      })}
+                      className="p-3.5 rounded-2xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-left transition-all group cursor-pointer flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center flex-shrink-0">
+                          <PlayCircle size={18} />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-white group-hover:text-blue-300 transition-colors">
+                            Heractiveer lidmaatschap
+                          </div>
+                          <div className="text-[11px] text-text-muted">
+                            Herstel toegang (status: active)
+                          </div>
+                        </div>
+                      </div>
+                      <ArrowUpRight size={16} className="text-blue-400 opacity-60 group-hover:opacity-100 transition-opacity" />
                     </button>
                   </div>
                 </div>

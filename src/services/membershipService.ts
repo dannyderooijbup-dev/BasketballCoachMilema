@@ -116,9 +116,175 @@ export async function startTrial(
 }
 
 /**
- * Uitbreidbaar voor toekomstige acties:
- * - activateCoach
- * - activateClub
- * - resetPending
- * - changeRole
+ * Activeert een Coach licentie voor de opgegeven gebruiker.
+ * Maakt eventuele proefperiode datums leeg.
  */
+export async function activateCoach(
+  adminUid: string,
+  targetUid: string,
+  currentMembership?: UserMembership | null
+): Promise<void> {
+  const now = Date.now();
+  const newMembership: UserMembership = {
+    type: 'coach',
+    status: 'active',
+    approvedAt: now,
+    approvedBy: adminUid,
+    trialStart: null,
+    trialEnd: null,
+  };
+
+  await executeAdminAction({
+    adminUid,
+    targetUid,
+    action: 'coach_activated',
+    userUpdate: {
+      membership: newMembership,
+    },
+    oldValue: currentMembership || null,
+    newValue: newMembership,
+  });
+}
+
+/**
+ * Activeert een Club licentie voor de opgegeven gebruiker.
+ * Maakt eventuele proefperiode datums leeg.
+ */
+export async function activateClub(
+  adminUid: string,
+  targetUid: string,
+  currentMembership?: UserMembership | null
+): Promise<void> {
+  const now = Date.now();
+  const newMembership: UserMembership = {
+    type: 'club',
+    status: 'active',
+    approvedAt: now,
+    approvedBy: adminUid,
+    trialStart: null,
+    trialEnd: null,
+  };
+
+  await executeAdminAction({
+    adminUid,
+    targetUid,
+    action: 'club_activated',
+    userUpdate: {
+      membership: newMembership,
+    },
+    oldValue: currentMembership || null,
+    newValue: newMembership,
+  });
+}
+
+/**
+ * Zet het lidmaatschap van de gebruiker terug naar 'pending'.
+ * Wis goedkeurings- en proefperiodegegevens.
+ */
+export async function resetToPending(
+  adminUid: string,
+  targetUid: string,
+  currentMembership?: UserMembership | null
+): Promise<void> {
+  const newMembership: UserMembership = {
+    type: 'pending',
+    status: 'pending',
+    approvedAt: null,
+    approvedBy: null,
+    trialStart: null,
+    trialEnd: null,
+  };
+
+  await executeAdminAction({
+    adminUid,
+    targetUid,
+    action: 'membership_reset_pending',
+    userUpdate: {
+      membership: newMembership,
+    },
+    oldValue: currentMembership || null,
+    newValue: newMembership,
+  });
+}
+
+/**
+ * Schort het lidmaatschap van de gebruiker op (status 'suspended').
+ */
+export async function suspendMembership(
+  adminUid: string,
+  targetUid: string,
+  currentMembership?: UserMembership | null
+): Promise<void> {
+  const newMembership: UserMembership = {
+    type: currentMembership?.type || 'pending',
+    status: 'suspended',
+    approvedAt: currentMembership?.approvedAt || null,
+    approvedBy: currentMembership?.approvedBy || null,
+    trialStart: currentMembership?.trialStart || null,
+    trialEnd: currentMembership?.trialEnd || null,
+  };
+
+  await executeAdminAction({
+    adminUid,
+    targetUid,
+    action: 'membership_suspended',
+    userUpdate: {
+      membership: newMembership,
+    },
+    oldValue: currentMembership || null,
+    newValue: newMembership,
+  });
+}
+
+/**
+ * Heractiveert een geschorst of inactief lidmaatschap (status 'active').
+ */
+export async function reactivateMembership(
+  adminUid: string,
+  targetUid: string,
+  currentMembership?: UserMembership | null
+): Promise<void> {
+  const now = Date.now();
+  const type = currentMembership?.type && currentMembership.type !== 'pending' ? currentMembership.type : 'coach';
+
+  const newMembership: UserMembership = {
+    type,
+    status: 'active',
+    approvedAt: currentMembership?.approvedAt || now,
+    approvedBy: currentMembership?.approvedBy || adminUid,
+    trialStart: currentMembership?.trialStart || null,
+    trialEnd: currentMembership?.trialEnd || null,
+  };
+
+  await executeAdminAction({
+    adminUid,
+    targetUid,
+    action: 'membership_reactivated',
+    userUpdate: {
+      membership: newMembership,
+    },
+    oldValue: currentMembership || null,
+    newValue: newMembership,
+  });
+}
+
+/**
+ * Wijzigt de systeemrol van de gebruiker (admin/user).
+ */
+export async function changeRole(
+  adminUid: string,
+  targetUid: string,
+  newRole: UserRole,
+  currentRole?: UserRole
+): Promise<void> {
+  await executeAdminAction({
+    adminUid,
+    targetUid,
+    action: 'role_changed',
+    userUpdate: {
+      role: newRole,
+    },
+    oldValue: currentRole || 'user',
+    newValue: newRole,
+  });
+}

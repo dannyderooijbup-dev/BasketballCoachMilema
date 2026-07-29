@@ -54,6 +54,7 @@ import AuthScreen from './components/AuthScreen';
 import AccountScreen from './components/AccountScreen';
 import AdminDashboard from './components/AdminDashboard';
 import ClubDashboard from './components/ClubDashboard';
+import { getClubForUser } from './services/clubService';
 import { db } from './firebase';
 import { canCreateTeam, getMaxTeams, getUpgradeReason, UpgradeReason } from './services/permissionsService';
 import { UpgradeModal } from './components/UpgradeModal';
@@ -932,13 +933,39 @@ export default function App() {
           await setDoc(userDocRef, initialDocData);
         }
 
-        // 1. Fetch Teams
-        const teamsQuery = query(collection(db, 'teams'), where('userId', '==', currentUser.uid));
-        const teamsSnap = await getDocs(teamsQuery);
+        // 1. Fetch Teams (Coach: userId == currentUser.uid, Club: clubId == currentClub.id)
+        let userClub = await getClubForUser(currentUser.uid);
         let loadedTeams: Team[] = [];
-        teamsSnap.forEach(tDoc => {
-          loadedTeams.push({ id: tDoc.id, ...tDoc.data() } as Team);
-        });
+        const teamsMap = new Map<string, Team>();
+        const currentMembership = data?.membership || membership || DEFAULT_MEMBERSHIP;
+
+        // If user is part of an active Club Workspace, fetch club teams
+        if (userClub && (currentMembership?.type === 'club' || currentMembership?.status === 'active')) {
+          try {
+            const clubTeamsQuery = query(collection(db, 'teams'), where('clubId', '==', userClub.id));
+            const clubTeamsSnap = await getDocs(clubTeamsQuery);
+            clubTeamsSnap.forEach(tDoc => {
+              teamsMap.set(tDoc.id, { id: tDoc.id, ...tDoc.data() } as Team);
+            });
+          } catch (e) {
+            console.warn("Fout bij ophalen club teams:", e);
+          }
+        }
+
+        // Always fetch personal teams (userId == currentUser.uid) for backwards compatibility
+        try {
+          const personalTeamsQuery = query(collection(db, 'teams'), where('userId', '==', currentUser.uid));
+          const personalTeamsSnap = await getDocs(personalTeamsQuery);
+          personalTeamsSnap.forEach(tDoc => {
+            if (!teamsMap.has(tDoc.id)) {
+              teamsMap.set(tDoc.id, { id: tDoc.id, ...tDoc.data() } as Team);
+            }
+          });
+        } catch (e) {
+          console.warn("Fout bij ophalen persoonlijke teams:", e);
+        }
+
+        loadedTeams = Array.from(teamsMap.values());
         setTeams(loadedTeams);
 
         // 2. Fetch Players
@@ -1433,11 +1460,24 @@ export default function App() {
       return false;
     }
 
+    let activeClubId: string | null = null;
+    if (membership?.type === 'club' && membership?.status === 'active') {
+      try {
+        const userClub = await getClubForUser(currentUser.uid);
+        if (userClub) {
+          activeClubId = userClub.id;
+        }
+      } catch (e) {
+        console.warn("Kon club workspace niet ophalen bij team aanmaken:", e);
+      }
+    }
+
     const tId = generateId();
     const newTeam: Team = {
       id: tId,
       name,
       userId: currentUser.uid,
+      clubId: activeClubId,
       createdAt: Date.now()
     };
 

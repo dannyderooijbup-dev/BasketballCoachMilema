@@ -41,6 +41,7 @@
             "id": { "type": "string" },
             "name": { "type": "string" },
             "userId": { "type": "string" },
+            "clubId": { "type": "string" },
             "createdAt": { "type": "number" }
           }
         }

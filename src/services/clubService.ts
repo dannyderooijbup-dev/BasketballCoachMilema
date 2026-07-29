@@ -9,7 +9,7 @@ import {
   where 
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { ClubWorkspace, ClubMember, ClubMemberRole, ClubMemberStatus } from '../types';
+import { ClubWorkspace, ClubMember, ClubMemberRole, ClubMemberStatus, Team } from '../types';
 
 export enum OperationType {
   CREATE = 'create',
@@ -246,3 +246,51 @@ export async function updateClubName(clubId: string, newName: string): Promise<v
     handleFirestoreError(err, OperationType.UPDATE, `clubs/${clubId}`);
   }
 }
+
+/**
+ * Haalt alle teams op die gekoppeld zijn aan een specifieke Club Workspace (clubId).
+ */
+export async function getClubTeams(clubId: string): Promise<Team[]> {
+  if (!clubId) return [];
+
+  try {
+    const teamsRef = collection(db, 'teams');
+    const q = query(teamsRef, where('clubId', '==', clubId));
+    const snap = await getDocs(q);
+
+    const teams: Team[] = [];
+    snap.forEach(docSnap => {
+      teams.push({ id: docSnap.id, ...docSnap.data() } as Team);
+    });
+    return teams;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, `teams for club ${clubId}`);
+    return [];
+  }
+}
+
+/**
+ * Haalt de specifieke rol op van een gebruiker binnen een Club Workspace.
+ */
+export async function getClubMemberRole(clubId: string, userUid: string): Promise<ClubMemberRole | null> {
+  if (!clubId || !userUid) return null;
+
+  try {
+    const memberDocRef = doc(db, 'club_members', `${clubId}_${userUid}`);
+    const memberSnap = await getDoc(memberDocRef);
+    if (memberSnap.exists()) {
+      return (memberSnap.data().role as ClubMemberRole) || 'coach';
+    }
+
+    const clubSnap = await getDoc(doc(db, 'clubs', clubId));
+    if (clubSnap.exists() && clubSnap.data().ownerUid === userUid) {
+      return 'admin';
+    }
+
+    return null;
+  } catch (err) {
+    console.warn('Kon clubrol van gebruiker niet ophalen:', err);
+    return null;
+  }
+}
+

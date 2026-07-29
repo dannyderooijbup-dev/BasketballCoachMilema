@@ -26,9 +26,30 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/players/$(playerId)).data;
     }
 
-    // Controleert of de ingelogde gebruiker de eigenaar is van het gekoppelde team
+    // Controleert of de ingelogde gebruiker de eigenaar is van het gekoppelde team of dat het team gedeeld is via de club workspace
     function isTeamOwner(teamId) {
-      return isSignedIn() && getTeam(teamId).userId == request.auth.uid;
+      return isSignedIn() && (
+        getTeam(teamId).userId == request.auth.uid ||
+        ('clubId' in getTeam(teamId) && getTeam(teamId).clubId != null && isClubMember(getTeam(teamId).clubId))
+      );
+    }
+
+    // Controleert of een gebruiker lid is van een club workspace
+    function isClubMember(clubId) {
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/clubs/$(clubId)) && get(/databases/$(database)/documents/clubs/$(clubId)).data.ownerUid == request.auth.uid) ||
+        exists(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid))
+      );
+    }
+
+    // Controleert of een gebruiker beheerder of coach is binnen een club workspace (beheerrechten voor club teams)
+    function canManageClubTeams(clubId) {
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/clubs/$(clubId)) && get(/databases/$(database)/documents/clubs/$(clubId)).data.ownerUid == request.auth.uid) ||
+        (exists(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid)) && 
+          (get(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid)).data.role == 'admin' ||
+           get(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid)).data.role == 'coach'))
+      );
     }
 
     // Controleert of de ingelogde gebruiker de eigenaar is van de gekoppelde speler
@@ -66,40 +87,62 @@ service cloud.firestore {
     // TEAMS COLLECTIE
     // ==========================================
     match /teams/{teamId} {
-      // Alleen ingelogde coaches mogen teams aanmaken en zij moeten zichzelf als eigenaar (userId) registreren
+      // Alleen ingelogde coaches/clubleden mogen teams aanmaken
       allow create: if isSignedIn() 
         && request.resource.data.userId == request.auth.uid
+        && (
+          !('clubId' in request.resource.data) 
+          || request.resource.data.clubId == null 
+          || request.resource.data.clubId == '' 
+          || canManageClubTeams(request.resource.data.clubId)
+        )
         // Validatie van verplichte velden, datatypes en bekende velden
         && request.resource.data.keys().hasAll(['id', 'name', 'userId', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['id', 'name', 'userId', 'createdAt', 'colorScheme'])
+        && request.resource.data.keys().hasOnly(['id', 'name', 'userId', 'createdAt', 'colorScheme', 'clubId'])
         && request.resource.data.id is string
         && request.resource.data.name is string 
         && request.resource.data.name.size() > 0 
         && request.resource.data.name.size() <= 100 // Maximale lengte voor teamnaam
         && request.resource.data.userId is string
         && (request.resource.data.createdAt is int || request.resource.data.createdAt is float)
-        && (!('colorScheme' in request.resource.data) || request.resource.data.colorScheme is string);
+        && (!('colorScheme' in request.resource.data) || request.resource.data.colorScheme is string)
+        && (!('clubId' in request.resource.data) || request.resource.data.clubId == null || request.resource.data.clubId is string);
 
-      // Alleen de eigenaar mag het team lezen of verwijderen
-      allow read, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // Eigenaars, admins en actieve clubleden mogen het team lezen
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        ('clubId' in resource.data && resource.data.clubId != null && isClubMember(resource.data.clubId))
+      );
 
-      // Alleen de eigenaar mag het team wijzigen; diverse systeemvelden zijn onveranderbaar (immutable)
+      // Eigenaars, admins en clubbeheerders/coaches mogen het team verwijderen
+      allow delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        ('clubId' in resource.data && resource.data.clubId != null && canManageClubTeams(resource.data.clubId))
+      );
+
+      // Eigenaars, admins en clubbeheerders/coaches mogen het team wijzigen; onveranderbare velden blijven beschermd
       allow update: if isSignedIn() 
-        && resource.data.userId == request.auth.uid 
-        && request.resource.data.userId == request.auth.uid // userId mag niet gewijzigd worden
-        && resource.data.userId == request.resource.data.userId // eigenaar (userId) van document mag nooit gewijzigd worden
+        && (
+          resource.data.userId == request.auth.uid ||
+          isAdmin() ||
+          ('clubId' in resource.data && resource.data.clubId != null && canManageClubTeams(resource.data.clubId))
+        )
+        && request.resource.data.userId == resource.data.userId // userId mag niet gewijzigd worden
         && resource.data.id == request.resource.data.id // document-ID (id) mag nooit gewijzigd worden
         && resource.data.createdAt == request.resource.data.createdAt // aanmaaktijdstip (createdAt) mag nooit gewijzigd worden
         // Validatie van de nieuwe document data
         && request.resource.data.keys().hasAll(['id', 'name', 'userId', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['id', 'name', 'userId', 'createdAt', 'colorScheme'])
+        && request.resource.data.keys().hasOnly(['id', 'name', 'userId', 'createdAt', 'colorScheme', 'clubId'])
         && request.resource.data.id is string
         && request.resource.data.name is string 
         && request.resource.data.name.size() > 0 
         && request.resource.data.name.size() <= 100
         && request.resource.data.userId is string
         && (request.resource.data.createdAt is int || request.resource.data.createdAt is float)
-        && (!('colorScheme' in request.resource.data) || request.resource.data.colorScheme is string);
+        && (!('colorScheme' in request.resource.data) || request.resource.data.colorScheme is string)
+        && (!('clubId' in request.resource.data) || request.resource.data.clubId == null || request.resource.data.clubId is string);
     }
 
     // ==========================================

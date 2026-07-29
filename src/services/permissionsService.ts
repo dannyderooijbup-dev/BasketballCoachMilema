@@ -1,4 +1,4 @@
-import { UserMembership, MembershipPermissions } from '../types';
+import { UserMembership, MembershipPermissions, ClubMemberRole } from '../types';
 
 /**
  * Centrale permissie-configuratie per membership type.
@@ -252,5 +252,41 @@ export function getUpgradeReason(
   }
 
   return null;
+}
+
+/**
+ * Controleert of een clublid leesrechten heeft voor club teams.
+ * Alle actieve rollen (admin, coach, assistent) hebben leesrechten.
+ */
+export function canViewClubTeams(role?: ClubMemberRole | string | null): boolean {
+  if (!role) return true;
+  return ['admin', 'coach', 'assistant'].includes(role);
+}
+
+/**
+ * Controleert of een clublid nieuwe club teams mag aanmaken.
+ * Alleen beheerders (admin) en coaches mogen club teams aanmaken.
+ */
+export function canCreateClubTeams(role?: ClubMemberRole | string | null): boolean {
+  if (!role) return true;
+  return ['admin', 'coach'].includes(role);
+}
+
+/**
+ * Controleert of een clublid bestaande club teams mag bewerken.
+ * Alleen beheerders (admin) en coaches mogen club teams bewerken.
+ */
+export function canEditClubTeams(role?: ClubMemberRole | string | null): boolean {
+  if (!role) return true;
+  return ['admin', 'coach'].includes(role);
+}
+
+/**
+ * Controleert of een clublid club teams mag verwijderen.
+ * Alleen beheerders (admin) en coaches mogen club teams verwijderen.
+ */
+export function canDeleteClubTeams(role?: ClubMemberRole | string | null): boolean {
+  if (!role) return true;
+  return ['admin', 'coach'].includes(role);
 }
 

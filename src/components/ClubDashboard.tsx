@@ -18,12 +18,13 @@ import {
   Mail,
   Users2
 } from 'lucide-react';
-import { ClubWorkspace, ClubMember, ClubMemberRole, UserMembership } from '../types';
+import { ClubWorkspace, ClubMember, ClubMemberRole, UserMembership, Team } from '../types';
 import { 
   getClubForUser, 
   getClubMembers, 
   updateClubName, 
-  ensureClubWorkspaceForUser 
+  ensureClubWorkspaceForUser,
+  getClubTeams
 } from '../services/clubService';
 
 interface ClubDashboardProps {
@@ -34,6 +35,7 @@ interface ClubDashboardProps {
 export default function ClubDashboard({ currentUserId, membership }: ClubDashboardProps) {
   const [club, setClub] = useState<ClubWorkspace | null>(null);
   const [members, setMembers] = useState<ClubMember[]>([]);
+  const [clubTeams, setClubTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditingName, setIsEditingName] = useState(false);
   const [newClubName, setNewClubName] = useState('');
@@ -66,8 +68,12 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
       setClub(userClub);
       if (userClub) {
         setNewClubName(userClub.naam);
-        const clubMembersList = await getClubMembers(userClub.id);
+        const [clubMembersList, teamsList] = await Promise.all([
+          getClubMembers(userClub.id),
+          getClubTeams(userClub.id)
+        ]);
         setMembers(clubMembersList);
+        setClubTeams(teamsList);
       }
     } catch (err) {
       console.error("Fout bij laden van Club Workspace gegevens:", err);
@@ -233,7 +239,7 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
       </div>
 
       {/* Statistieken Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-surface p-5 rounded-2xl border border-white/5 space-y-2">
           <div className="flex items-center justify-between text-text-muted">
             <span className="text-xs uppercase font-bold tracking-wider">Aantal Leden</span>
@@ -244,6 +250,19 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
           </div>
           <div className="text-[11px] text-text-muted">
             {members.filter(m => m.status === 'active').length} actief
+          </div>
+        </div>
+
+        <div className="bg-surface p-5 rounded-2xl border border-white/5 space-y-2">
+          <div className="flex items-center justify-between text-text-muted">
+            <span className="text-xs uppercase font-bold tracking-wider">Aantal Club Teams</span>
+            <Shield size={18} className="text-cyan-400" />
+          </div>
+          <div className="text-3xl font-mono font-black text-white">
+            {clubTeams.length} {clubTeams.length === 1 ? 'team' : 'teams'}
+          </div>
+          <div className="text-[11px] text-text-muted">
+            Gedeeld binnen club workspace
           </div>
         </div>
 

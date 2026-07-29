@@ -70,6 +70,21 @@ export type Tab = 'dashboard' | 'history' | 'players' | 'season' | 'account' | '
 export type ClubMemberRole = 'admin' | 'coach' | 'assistant';
 export type ClubMemberStatus = 'active' | 'pending';
 
+export type InviteRole = 'coach' | 'assistant';
+export type InviteStatus = 'pending' | 'accepted' | 'cancelled';
+
+export interface ClubInvite {
+  id: string;
+  clubId: string;
+  email: string;
+  displayName: string;
+  role: InviteRole;
+  status: InviteStatus;
+  createdAt: number;
+  createdBy: string;
+  expiresAt: number;
+}
+
 export interface ClubWorkspace {
   id: string;
   naam: string;

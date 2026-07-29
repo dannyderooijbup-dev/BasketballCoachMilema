@@ -119,6 +119,23 @@
           }
         }
       }
+    },
+    "club_invites": {
+      "description": "Collection of club invitation records",
+      "documents": {
+        "{inviteId}": {
+          "schema": {
+            "clubId": { "type": "string" },
+            "email": { "type": "string" },
+            "displayName": { "type": "string" },
+            "role": { "type": "string" },
+            "status": { "type": "string" },
+            "createdAt": { "type": "number" },
+            "createdBy": { "type": "string" },
+            "expiresAt": { "type": "number" }
+          }
+        }
+      }
     }
   }
 }

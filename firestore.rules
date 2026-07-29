@@ -79,8 +79,9 @@ service cloud.firestore {
     // AUDIT LOGS COLLECTIE
     // ==========================================
     match /audit_logs/{logId} {
-      // Alleen beheerders mogen audit logs inzien en toevoegen
-      allow read, create: if isAdmin();
+      // Beheerders en ingelogde clubbeheerders mogen audit logs inzien en toevoegen
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
     }
 
     // ==========================================
@@ -268,6 +269,39 @@ service cloud.firestore {
     match /club_members/{docId} {
       allow read: if isSignedIn();
       allow create, update, delete: if isSignedIn();
+    }
+
+    // ==========================================
+    // CLUB INVITES COLLECTIE
+    // ==========================================
+    match /club_invites/{inviteId} {
+      // Clubleden, admins en de genodigde (op e-mailadres) mogen de uitnodiging lezen
+      allow read: if isSignedIn();
+      
+      // Clubbeheerders/coaches en admins mogen uitnodigingen aanmaken
+      allow create: if isSignedIn() 
+        && request.resource.data.createdBy == request.auth.uid
+        && (canManageClubTeams(request.resource.data.clubId) || isAdmin())
+        && request.resource.data.keys().hasAll(['clubId', 'email', 'displayName', 'role', 'status', 'createdAt', 'createdBy', 'expiresAt'])
+        && request.resource.data.keys().hasOnly(['clubId', 'email', 'displayName', 'role', 'status', 'createdAt', 'createdBy', 'expiresAt'])
+        && request.resource.data.clubId is string
+        && request.resource.data.email is string
+        && request.resource.data.displayName is string
+        && request.resource.data.role in ['coach', 'assistant']
+        && request.resource.data.status in ['pending', 'accepted', 'cancelled']
+        && (request.resource.data.createdAt is int || request.resource.data.createdAt is float)
+        && request.resource.data.createdBy is string
+        && (request.resource.data.expiresAt is int || request.resource.data.expiresAt is float);
+
+      // Clubbeheerders, admins of de genodigde mogen uitnodigingen bijwerken (bijv. annuleren of accepteren)
+      allow update: if isSignedIn() 
+        && (canManageClubTeams(resource.data.clubId) || isAdmin() || resource.data.email == request.auth.token.email)
+        && request.resource.data.clubId == resource.data.clubId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      // Clubbeheerders en admins mogen uitnodigingen verwijderen
+      allow delete: if isSignedIn() && (canManageClubTeams(resource.data.clubId) || isAdmin());
     }
   }
 }

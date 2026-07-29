@@ -209,5 +209,22 @@ service cloud.firestore {
         && request.resource.data.userId is string
         && (!('role' in request.resource.data) || request.resource.data.role is string && request.resource.data.role.size() <= 50);
     }
+
+    // ==========================================
+    // CLUBS COLLECTIE
+    // ==========================================
+    match /clubs/{clubId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (request.resource.data.ownerUid == request.auth.uid || isAdmin());
+      allow update, delete: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // ==========================================
+    // CLUB MEMBERS COLLECTIE
+    // ==========================================
+    match /club_members/{docId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+    }
   }
 }

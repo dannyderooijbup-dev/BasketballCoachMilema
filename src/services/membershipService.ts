@@ -1,6 +1,7 @@
 import { doc, setDoc, collection, addDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { UserMembership, UserRole } from '../types';
+import { ensureClubWorkspaceForUser } from './clubService';
 
 export enum OperationType {
   CREATE = 'create',
@@ -211,6 +212,13 @@ export async function activateClub(
     oldValue: currentMembership || null,
     newValue: newMembership,
   });
+
+  // Bij eerste activatie van Club-lidmaatschap: maak automatisch club & club_members record aan
+  try {
+    await ensureClubWorkspaceForUser(targetUid);
+  } catch (e) {
+    console.error("Fout bij automatisch aanmaken van Club Workspace:", e);
+  }
 }
 
 /**

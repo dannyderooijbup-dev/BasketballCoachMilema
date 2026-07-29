@@ -29,7 +29,8 @@ import {
   Moon,
   Clock,
   RefreshCw,
-  ShieldCheck
+  ShieldCheck,
+  Building2
 } from 'lucide-react';
 import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, SEASONS, DEFAULT_SEASON, DEFAULT_MEMBERSHIP, UserMembership, UserRole } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
@@ -52,6 +53,7 @@ import { useAuth } from './AuthContext';
 import AuthScreen from './components/AuthScreen';
 import AccountScreen from './components/AccountScreen';
 import AdminDashboard from './components/AdminDashboard';
+import ClubDashboard from './components/ClubDashboard';
 import { db } from './firebase';
 import { canCreateTeam, getMaxTeams, getUpgradeReason, UpgradeReason } from './services/permissionsService';
 import { UpgradeModal } from './components/UpgradeModal';
@@ -3351,6 +3353,9 @@ export default function App() {
           <TabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={18} />} label="Seizoen" />
           <TabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={18} />} label="Teams" />
           <TabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={18} />} label="Account" />
+          {(membership?.type === 'club' && membership?.status === 'active') && (
+            <TabButton active={activeTab === 'club'} onClick={() => setActiveTab('club')} icon={<Building2 size={18} className="text-cyan-400" />} label="Club" />
+          )}
           {isAdmin() && (
             <TabButton active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<ShieldCheck size={18} className="text-amber-400" />} label="Admin" />
           )}
@@ -3541,6 +3546,9 @@ export default function App() {
         {activeTab === 'admin' && isAdmin() && (
           <AdminDashboard isAdmin={isAdmin()} currentUserId={currentUser?.uid} />
         )}
+        {activeTab === 'club' && (membership?.type === 'club' && membership?.status === 'active' || isAdmin()) && (
+          <ClubDashboard currentUserId={currentUser?.uid} membership={membership} />
+        )}
       </main>
 
       {/* Mobile Nav */}
@@ -3550,6 +3558,9 @@ export default function App() {
         <MobileTabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={20} />} label="Stats" />
         <MobileTabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={20} />} label="Teams" />
         <MobileTabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={20} />} label="Account" />
+        {(membership?.type === 'club' && membership?.status === 'active') && (
+          <MobileTabButton active={activeTab === 'club'} onClick={() => setActiveTab('club')} icon={<Building2 size={20} className="text-cyan-400" />} label="Club" />
+        )}
         {isAdmin() && (
           <MobileTabButton active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<ShieldCheck size={20} className="text-amber-400" />} label="Admin" />
         )}

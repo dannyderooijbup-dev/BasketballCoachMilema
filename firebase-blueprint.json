@@ -91,6 +91,33 @@
           }
         }
       }
+    },
+    "clubs": {
+      "description": "Collection of club workspaces for club memberships",
+      "documents": {
+        "{clubId}": {
+          "schema": {
+            "naam": { "type": "string" },
+            "ownerUid": { "type": "string" },
+            "createdAt": { "type": "number" },
+            "subscriptionType": { "type": "string" }
+          }
+        }
+      }
+    },
+    "club_members": {
+      "description": "Collection of members belonging to club workspaces",
+      "documents": {
+        "{docId}": {
+          "schema": {
+            "clubId": { "type": "string" },
+            "userUid": { "type": "string" },
+            "role": { "type": "string" },
+            "status": { "type": "string" },
+            "joinedAt": { "type": "number" }
+          }
+        }
+      }
     }
   }
 }

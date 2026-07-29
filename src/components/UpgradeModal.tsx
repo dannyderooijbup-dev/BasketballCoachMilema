@@ -20,8 +20,12 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
   if (!isOpen) return null;
 
-  const defaultTitle = "Maximum aantal teams bereikt";
-  const defaultText = "Je Coach-lidmaatschap ondersteunt maximaal 3 teams.\nUpgrade naar Club om onbeperkt teams te beheren en toekomstige premiumfuncties te gebruiken.";
+  const isCoachSuggested = reason?.suggestedPlan === 'coach';
+
+  const defaultTitle = isCoachSuggested ? "Upgrade naar Full Membership" : "Maximum aantal teams bereikt";
+  const defaultText = isCoachSuggested
+    ? "Je proefperiode geeft je tijdelijk toegang tot alle functies van Basketball Coach GameStats. Upgrade naar een Full Membership (Coach) om ongestoord verder te werken."
+    : "Je Coach-lidmaatschap ondersteunt maximaal 3 teams.\nUpgrade naar Club om onbeperkt teams te beheren en toekomstige premiumfuncties te gebruiken.";
 
   const title = reason?.title || defaultTitle;
   const description = reason?.description || defaultText;
@@ -80,23 +84,43 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             {description}
           </div>
 
-          {/* Feature highlights for Club */}
+          {/* Feature highlights */}
           <div className="space-y-2.5 mb-8">
             <div className="text-xs uppercase font-bold text-text-muted tracking-wider mb-3 flex items-center gap-1.5">
-              <Sparkles size={14} className="text-amber-400" /> Voordelen van Club-lidmaatschap:
+              <Sparkles size={14} className="text-amber-400" />
+              {isCoachSuggested ? "Voordelen van Full Membership (Coach):" : "Voordelen van Club-lidmaatschap:"}
             </div>
-            <div className="flex items-center gap-3 text-xs text-white/90 font-medium">
-              <CheckCircle2 size={16} className="text-amber-400 flex-shrink-0" />
-              <span>Onbeperkt teams aanmaken en beheren</span>
-            </div>
-            <div className="flex items-center gap-3 text-xs text-white/90 font-medium">
-              <CheckCircle2 size={16} className="text-amber-400 flex-shrink-0" />
-              <span>Volledige seizoen- en spelersstatistieken</span>
-            </div>
-            <div className="flex items-center gap-3 text-xs text-white/90 font-medium">
-              <CheckCircle2 size={16} className="text-amber-400 flex-shrink-0" />
-              <span>Toekomstige clubbeheer- en exportfuncties</span>
-            </div>
+            {isCoachSuggested ? (
+              <>
+                <div className="flex items-center gap-3 text-xs text-white/90 font-medium">
+                  <CheckCircle2 size={16} className="text-amber-400 flex-shrink-0" />
+                  <span>Blijvend toegang tot al je teams, spelers en wedstrijden</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-white/90 font-medium">
+                  <CheckCircle2 size={16} className="text-amber-400 flex-shrink-0" />
+                  <span>Tot 3 teams beheren met uitgebreide seizoensstatistieken</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-white/90 font-medium">
+                  <CheckCircle2 size={16} className="text-amber-400 flex-shrink-0" />
+                  <span>Live box scores, kwartanalyses en speler-export</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 text-xs text-white/90 font-medium">
+                  <CheckCircle2 size={16} className="text-amber-400 flex-shrink-0" />
+                  <span>Onbeperkt teams aanmaken en beheren</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-white/90 font-medium">
+                  <CheckCircle2 size={16} className="text-amber-400 flex-shrink-0" />
+                  <span>Volledige seizoen- en spelersstatistieken</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-white/90 font-medium">
+                  <CheckCircle2 size={16} className="text-amber-400 flex-shrink-0" />
+                  <span>Toekomstige clubbeheer- en exportfuncties</span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Toast notice for More Info placeholder */}
@@ -107,7 +131,11 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
               className="p-3 mb-4 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs flex items-center gap-2"
             >
               <Info size={16} className="flex-shrink-0" />
-              <span>Neem contact op met de beheerder om je lidmaatschap op te waarderen naar Club.</span>
+              <span>
+                {isCoachSuggested
+                  ? "Neem contact op met de beheerder om je proefperiode om te zetten naar een Full Membership (Coach)."
+                  : "Neem contact op met de beheerder om je lidmaatschap op te waarderen naar Club."}
+              </span>
             </motion.div>
           )}
 

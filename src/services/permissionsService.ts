@@ -221,7 +221,7 @@ export function getUpgradeReason(
     return {
       code: 'TRIAL_EXPIRED',
       title: 'Proefperiode verlopen',
-      description: 'Je proefperiode van 14 dagen is verlopen. Upgrade naar een Coach- of Club-lidmaatschap om verder te werken.',
+      description: 'Je proefperiode van 14 dagen is verlopen. Upgrade naar een Full Membership (Coach) om verder te werken.',
       suggestedPlan: 'coach',
     };
   }
@@ -235,11 +235,18 @@ export function getUpgradeReason(
   }
 
   if (permissions.maxTeams !== Infinity && currentTeamCount >= permissions.maxTeams) {
-    const typeLabel = membership?.type === 'trial' ? 'Proefperiode' : 'Coach';
+    if (membership?.type === 'trial') {
+      return {
+        code: 'MAX_TEAMS_REACHED',
+        title: 'Maximum aantal teams bereikt',
+        description: 'Je proefperiode ondersteunt maximaal 3 teams. Upgrade naar een Full Membership (Coach) om meer mogelijkheden te ontdekken.',
+        suggestedPlan: 'coach',
+      };
+    }
     return {
       code: 'MAX_TEAMS_REACHED',
       title: 'Maximum aantal teams bereikt',
-      description: `Je ${typeLabel}-lidmaatschap ondersteunt maximaal ${permissions.maxTeams} teams. Upgrade naar Club om onbeperkt teams te beheren en toekomstige premiumfuncties te gebruiken.`,
+      description: `Je Coach-lidmaatschap ondersteunt maximaal ${permissions.maxTeams} teams. Upgrade naar Club om onbeperkt teams te beheren en toekomstige premiumfuncties te gebruiken.`,
       suggestedPlan: 'club',
     };
   }

@@ -125,7 +125,7 @@ export const MembershipWidget: React.FC<MembershipWidgetProps> = ({
           </div>
 
           <p className="text-xs sm:text-sm text-text-muted leading-relaxed bg-dark/40 border border-white/5 p-4 rounded-2xl">
-            Je proefperiode van 14 dagen is helaas afgelopen. Om verder te werken met je teams, spelers en wedstrijden raden wij aan om contact op te nemen voor een Coach- of Club-lidmaatschap.
+            Je proefperiode van 14 dagen is helaas afgelopen. Om verder te werken met je teams, spelers en wedstrijden raden wij aan om contact op te nemen voor een Full Membership (Coach).
           </p>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
@@ -242,16 +242,16 @@ export const MembershipWidget: React.FC<MembershipWidgetProps> = ({
           {/* Upgrade Trigger */}
           {onUpgradeClick && (
             <div className="pt-2 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="text-xs text-text-muted">
-                Wil je onbeperkt teams beheren? Upgrade naar Club.
+              <div className="text-xs text-text-muted leading-relaxed">
+                Je proefperiode geeft je tijdelijk toegang tot alle functies van Basketball Coach GameStats. Wil je de app na je proefperiode blijven gebruiken? Upgrade dan naar een Full Membership (Coach).
               </div>
               <button
                 type="button"
                 onClick={onUpgradeClick}
-                className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider py-2.5 px-5 rounded-xl transition-all active:scale-95 cursor-pointer shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
+                className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider py-2.5 px-5 rounded-xl transition-all active:scale-95 cursor-pointer shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 whitespace-nowrap shrink-0"
               >
                 <Crown size={15} />
-                <span>Upgrade naar Club</span>
+                <span>Upgrade naar Full Membership</span>
               </button>
             </div>
           )}

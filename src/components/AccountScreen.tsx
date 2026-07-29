@@ -7,7 +7,8 @@ import {
 } from 'firebase/auth';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { auth, googleProvider, db } from '../firebase';
-import { UserRole } from '../types';
+import { UserRole, UserMembership } from '../types';
+import { MembershipWidget } from './MembershipWidget';
 import { 
   User as UserIcon, 
   Mail, 
@@ -41,6 +42,9 @@ interface AccountScreenProps {
   onThemeChange: (theme: 'dark' | 'light') => void;
   systemRole?: UserRole;
   isAdmin?: boolean;
+  membership?: UserMembership | null;
+  currentTeamCount?: number;
+  onUpgradeClick?: () => void;
 }
 
 export default function AccountScreen({
@@ -54,7 +58,10 @@ export default function AccountScreen({
   theme,
   onThemeChange,
   systemRole = 'user',
-  isAdmin = false
+  isAdmin = false,
+  membership = null,
+  currentTeamCount = 0,
+  onUpgradeClick
 }: AccountScreenProps) {
   // Local state for draft profile settings
   const [localName, setLocalName] = useState(name);
@@ -221,9 +228,16 @@ export default function AccountScreen({
           Mijn Account
         </h2>
         <p className="text-xs text-text-muted">
-          Beheer je persoonlijke coachprofiel, accountinstellingen en synchronisatie.
+          Beheer je persoonlijke coachprofiel, accountinstellingen, lidmaatschap en synchronisatie.
         </p>
       </div>
+
+      {/* Membership Widget */}
+      <MembershipWidget
+        membership={membership}
+        currentTeamCount={currentTeamCount}
+        onUpgradeClick={onUpgradeClick}
+      />
 
       {msg && (
         <div className={`p-4 rounded-2xl flex items-start gap-3 text-xs border ${

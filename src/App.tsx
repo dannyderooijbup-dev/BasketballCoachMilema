@@ -3529,6 +3529,13 @@ export default function App() {
             onThemeChange={setTheme}
             systemRole={userRole}
             isAdmin={isAdmin()}
+            membership={membership}
+            currentTeamCount={teams.length}
+            onUpgradeClick={() => {
+              const reason = getUpgradeReason(membership, teams.length);
+              setUpgradeReason(reason);
+              setShowUpgradeModal(true);
+            }}
           />
         )}
         {activeTab === 'admin' && isAdmin() && (

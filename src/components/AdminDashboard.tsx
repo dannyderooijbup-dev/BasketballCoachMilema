@@ -4,6 +4,7 @@ import { db, auth } from '../firebase';
 import { AdminUser, UserRole, UserMembership } from '../types';
 import { 
   startTrial, 
+  expireTrial,
   activateCoach, 
   activateClub, 
   resetToPending, 
@@ -11,6 +12,7 @@ import {
   reactivateMembership, 
   changeRole 
 } from '../services/membershipService';
+import { isTrialExpired } from '../services/permissionsService';
 import { 
   Users, 
   Clock, 
@@ -243,6 +245,10 @@ export default function AdminDashboard({ isAdmin, currentUserId }: AdminDashboar
           case 'trial':
             await startTrial(adminUid, selectedUser.id, selectedUser.membership);
             setToastMessage(`Proefperiode van 14 dagen succesvol gestart voor ${userName}!`);
+            break;
+          case 'expire_trial':
+            await expireTrial(adminUid, selectedUser.id, selectedUser.membership, true);
+            setToastMessage(`Proefperiode van ${userName} succesvol handmatig beëindigd!`);
             break;
           case 'coach':
             await activateCoach(adminUid, selectedUser.id, selectedUser.membership);
@@ -766,6 +772,35 @@ export default function AdminDashboard({ isAdmin, currentUserId }: AdminDashboar
                       </div>
                       <ArrowUpRight size={16} className="text-cyan-400 opacity-60 group-hover:opacity-100 transition-opacity" />
                     </button>
+
+                    {/* Beëindig proefperiode (alleen bij actieve trial) */}
+                    {selectedUser.membership?.type === 'trial' && !isTrialExpired(selectedUser.membership) && (
+                      <button
+                        onClick={() => handleTriggerAction({
+                          type: 'membership',
+                          title: 'Proefperiode Beëindigen',
+                          actionLabel: 'Beëindig proefperiode',
+                          targetValue: 'expire_trial',
+                          description: `Hiermee wordt de proefperiode van ${selectedUser.naam || selectedUser.email} direct handmatig beëindigd (status: verlopen).`
+                        })}
+                        className="p-3.5 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-left transition-all group cursor-pointer flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center flex-shrink-0">
+                            <Clock size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-white group-hover:text-rose-300 transition-colors">
+                              Beëindig proefperiode
+                            </div>
+                            <div className="text-[11px] text-text-muted">
+                              Beëindig de actieve 14-dagen proefperiode handmatig
+                            </div>
+                          </div>
+                        </div>
+                        <ArrowUpRight size={16} className="text-rose-400 opacity-60 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                    )}
 
                     {/* Activeer Coach */}
                     <button

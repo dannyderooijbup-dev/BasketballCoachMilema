@@ -116,6 +116,42 @@ export async function startTrial(
 }
 
 /**
+ * Beëindigt/verloopt de proefperiode van een gebruiker op centrale wijze.
+ * Zet trialEnd op een verstreken tijdstip (now - 1000ms), waardoor isTrialExpired direct true is.
+ * Kan handmatig door een beheerder worden aangeroepen (action: 'trial_expired_manually')
+ * of door een toekomstige automatische achtergrondtaak (action: 'trial_expired_automatically').
+ */
+export async function expireTrial(
+  adminUid: string,
+  targetUid: string,
+  currentMembership?: UserMembership | null,
+  isManual: boolean = true
+): Promise<void> {
+  const now = Date.now();
+  const newMembership: UserMembership = {
+    type: 'trial',
+    status: currentMembership?.status || 'active',
+    trialStart: currentMembership?.trialStart || now - 14 * 24 * 60 * 60 * 1000,
+    trialEnd: now - 1000,
+    approvedAt: currentMembership?.approvedAt || null,
+    approvedBy: currentMembership?.approvedBy || null,
+  };
+
+  const action = isManual ? 'trial_expired_manually' : 'trial_expired_automatically';
+
+  await executeAdminAction({
+    adminUid,
+    targetUid,
+    action,
+    userUpdate: {
+      membership: newMembership,
+    },
+    oldValue: currentMembership || null,
+    newValue: newMembership,
+  });
+}
+
+/**
  * Activeert een Coach licentie voor de opgegeven gebruiker.
  * Maakt eventuele proefperiode datums leeg.
  */

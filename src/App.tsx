@@ -53,6 +53,8 @@ import AuthScreen from './components/AuthScreen';
 import AccountScreen from './components/AccountScreen';
 import AdminDashboard from './components/AdminDashboard';
 import { db } from './firebase';
+import { canCreateTeam, getMaxTeams, getUpgradeReason, UpgradeReason } from './services/permissionsService';
+import { UpgradeModal } from './components/UpgradeModal';
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -94,6 +96,8 @@ export default function App() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamPlayers, setTeamPlayers] = useState<TeamPlayer[]>([]);
   const [showAddTeamModal, setShowAddTeamModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeReason, setUpgradeReason] = useState<UpgradeReason | null>(null);
   const [newTeamName, setNewTeamName] = useState('');
   const [isSavingTeam, setIsSavingTeam] = useState(false);
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
@@ -1419,9 +1423,11 @@ export default function App() {
       return false;
     }
     
-    // UI Guard
-    if (teams.length >= 3) {
-      alert("Helaas, maximaal 3 teams is toegestaan onder dit account.");
+    // UI Guard using central permissionsService
+    if (!canCreateTeam(membership, teams.length)) {
+      const reason = getUpgradeReason(membership, teams.length);
+      setUpgradeReason(reason);
+      setShowUpgradeModal(true);
       return false;
     }
 
@@ -2018,7 +2024,9 @@ export default function App() {
   };
 
   const renderTeams = () => {
-    const isLimitReached = teams.length >= 3;
+    const maxTeams = getMaxTeams(membership);
+    const canAdd = canCreateTeam(membership, teams.length);
+    const reason = getUpgradeReason(membership, teams.length);
 
     return (
       <div className="space-y-6">
@@ -2026,21 +2034,21 @@ export default function App() {
           <div>
             <h2 className="text-xl sm:text-3xl font-display font-black italic uppercase tracking-tighter text-white">Mijn Teams</h2>
             <p className="text-[10px] text-text-muted uppercase tracking-widest font-bold mt-1">
-              {teams.length} van de 3 teams gebruikt
+              {teams.length} van de {maxTeams === Infinity ? 'onbeperkt' : maxTeams} teams gebruikt
             </p>
           </div>
           <button 
             onClick={() => {
-              if (isLimitReached) {
-                alert("Je hebt de limiet van maximaal 3 teams bereikt!");
+              if (!canAdd) {
+                setUpgradeReason(reason);
+                setShowUpgradeModal(true);
                 return;
               }
               setShowAddTeamModal(true);
             }}
-            disabled={isLimitReached}
             className={`font-display font-black uppercase italic tracking-tighter shadow-lg flex items-center gap-2 active:scale-95 transition-all text-xs sm:text-base p-2.5 sm:px-6 sm:py-3 rounded-xl cursor-pointer ${
-              isLimitReached 
-                ? 'bg-white/10 text-white/40 cursor-not-allowed shadow-none' 
+              !canAdd 
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 shadow-none' 
                 : 'bg-primary text-white hover:bg-primary/90 shadow-primary/20'
             }`}
           >
@@ -2048,9 +2056,18 @@ export default function App() {
           </button>
         </div>
 
-        {isLimitReached && (
-          <div className="bg-primary/10 border border-primary/20 p-4 rounded-2xl text-center text-xs sm:text-sm text-primary font-bold">
-            💡 Je hebt de limiet van 3 teams bereikt. Verwijder een team om een nieuwe te kunnen maken, of neem deel aan premium functionaliteiten!
+        {!canAdd && reason && (
+          <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl text-center text-xs sm:text-sm text-amber-300 font-bold flex items-center justify-between flex-wrap gap-2">
+            <span>💡 {reason.description}</span>
+            <button
+              onClick={() => {
+                setUpgradeReason(reason);
+                setShowUpgradeModal(true);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/30 text-xs font-bold transition-all cursor-pointer ml-auto"
+            >
+              Bekijk Upgrade
+            </button>
           </div>
         )}
 
@@ -4097,6 +4114,12 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        reason={upgradeReason}
+      />
     </div>
   );
 }

@@ -107,6 +107,13 @@ export interface UserMembership {
   approvedBy: string | null;
 }
 
+export interface MembershipPermissions {
+  hasAccess: boolean;
+  maxTeams: number; // Infinity or finite number
+  canExportData: boolean;
+  canManageMultipleClubs: boolean;
+}
+
 export const DEFAULT_MEMBERSHIP: UserMembership = {
   status: 'pending',
   type: 'pending',

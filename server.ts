@@ -119,6 +119,27 @@ async function sendEmail({
 }
 
 // API Routes
+app.post("/api/send-email", async (req, res) => {
+  try {
+    const { to, subject, html, text, cc } = req.body;
+
+    if (!to || !subject || (!html && !text)) {
+      return res.status(400).json({ error: "Onvoldoende gegevens. 'to', 'subject' en 'html'/'text' zijn verplicht." });
+    }
+
+    const plainText = text || subject;
+    const result = await sendEmail({ to, cc, subject, html, text: plainText });
+
+    return res.json({
+      success: true,
+      result,
+    });
+  } catch (error: any) {
+    console.error("Fout bij /api/send-email:", error);
+    return res.status(500).json({ error: "Fout bij verzenden van e-mail", details: error.message });
+  }
+});
+
 app.post("/api/send-registration-email", async (req, res) => {
   try {
     const { email, name, role, club, uid } = req.body;

@@ -1,7 +1,13 @@
-import { doc, setDoc, collection, addDoc } from 'firebase/firestore';
+import { doc, setDoc, collection, addDoc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { UserMembership, UserRole } from '../types';
 import { ensureClubWorkspaceForUser } from './clubService';
+import {
+  sendTrialStartedEmail,
+  sendCoachApprovedEmail,
+  sendClubApprovedEmail,
+  sendTrialExpiredEmail,
+} from './emailService';
 
 export enum OperationType {
   CREATE = 'create',
@@ -85,6 +91,25 @@ export async function executeAdminAction({
 }
 
 /**
+ * Helper functie om profielgegevens van een doelgebruiker op te halen voor e-mailnotificaties.
+ */
+async function getUserDetails(targetUid: string): Promise<{ email?: string; naam?: string; club?: string }> {
+  try {
+    const userSnap = await getDoc(doc(db, 'users', targetUid));
+    if (userSnap.exists()) {
+      const data = userSnap.data();
+      const email = data.profiel?.email || data.email || '';
+      const naam = data.profiel?.naam || data.naam || '';
+      const club = data.profiel?.club || data.club || '';
+      return { email, naam, club };
+    }
+  } catch (err) {
+    console.warn('Fout bij ophalen van gebruikersgegevens voor e-mail notificatie:', err);
+  }
+  return {};
+}
+
+/**
  * Start een proefperiode van 14 dagen voor de opgegeven gebruiker.
  */
 export async function startTrial(
@@ -114,6 +139,20 @@ export async function startTrial(
     oldValue: currentMembership || null,
     newValue: newMembership,
   });
+
+  // Verstuur e-mailnotificatie
+  try {
+    const { email, naam } = await getUserDetails(targetUid);
+    if (email) {
+      await sendTrialStartedEmail({
+        recipientEmail: email,
+        recipientName: naam || 'Coach',
+        trialEndDate: newMembership.trialEnd || undefined,
+      });
+    }
+  } catch (e) {
+    console.warn('Fout bij verzenden van trial_started e-mail:', e);
+  }
 }
 
 /**
@@ -150,6 +189,19 @@ export async function expireTrial(
     oldValue: currentMembership || null,
     newValue: newMembership,
   });
+
+  // Verstuur e-mailnotificatie
+  try {
+    const { email, naam } = await getUserDetails(targetUid);
+    if (email) {
+      await sendTrialExpiredEmail({
+        recipientEmail: email,
+        recipientName: naam || 'Coach',
+      });
+    }
+  } catch (e) {
+    console.warn('Fout bij verzenden van trial_expired e-mail:', e);
+  }
 }
 
 /**
@@ -181,6 +233,19 @@ export async function activateCoach(
     oldValue: currentMembership || null,
     newValue: newMembership,
   });
+
+  // Verstuur e-mailnotificatie
+  try {
+    const { email, naam } = await getUserDetails(targetUid);
+    if (email) {
+      await sendCoachApprovedEmail({
+        recipientEmail: email,
+        recipientName: naam || 'Coach',
+      });
+    }
+  } catch (e) {
+    console.warn('Fout bij verzenden van coach_approved e-mail:', e);
+  }
 }
 
 /**
@@ -218,6 +283,20 @@ export async function activateClub(
     await ensureClubWorkspaceForUser(targetUid);
   } catch (e) {
     console.error("Fout bij automatisch aanmaken van Club Workspace:", e);
+  }
+
+  // Verstuur e-mailnotificatie
+  try {
+    const { email, naam, club } = await getUserDetails(targetUid);
+    if (email) {
+      await sendClubApprovedEmail({
+        recipientEmail: email,
+        recipientName: naam || 'Club Beheerder',
+        clubName: club || 'je Club Workspace',
+      });
+    }
+  } catch (e) {
+    console.warn('Fout bij verzenden van club_approved e-mail:', e);
   }
 }
 

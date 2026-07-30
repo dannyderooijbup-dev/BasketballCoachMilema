@@ -11,6 +11,12 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { ClubInvite, InviteRole } from '../types';
+import { getClubMembers } from './clubService';
+import {
+  sendClubInviteEmail,
+  sendInviteAcceptedEmail,
+  sendAddedToClubWorkspaceEmail,
+} from './emailService';
 
 export enum OperationType {
   CREATE = 'create',
@@ -73,7 +79,7 @@ async function writeAuditLog(data: {
 }
 
 /**
- * Maakt een nieuwe uitnodiging aan voor een club workspace.
+ * Maakt een nieuwe uitnodiging aan voor een club workspace met validatie op dubbele uitnodigingen en bestaand lidmaatschap.
  */
 export async function createInvite(
   adminUid: string,
@@ -87,6 +93,55 @@ export async function createInvite(
 
   if (!clubId || !cleanEmail || !cleanName) {
     throw new Error('Incomplete gegevens voor het aanmaken van een uitnodiging.');
+  }
+
+  // VALIDATIE 1: Controleer of er al een openstaande (pending) uitnodiging voor dit e-mailadres binnen dezelfde club is
+  try {
+    const pendingQuery = query(
+      collection(db, 'club_invites'),
+      where('clubId', '==', clubId),
+      where('email', '==', cleanEmail),
+      where('status', '==', 'pending')
+    );
+    const pendingSnap = await getDocs(pendingQuery);
+    const unexpiredPending = pendingSnap.docs.filter(d => (d.data().expiresAt || 0) > Date.now());
+    if (unexpiredPending.length > 0) {
+      throw new Error('Er bestaat al een openstaande uitnodiging voor dit e-mailadres binnen deze club.');
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('openstaande uitnodiging')) {
+      throw err;
+    }
+    console.warn("Fout bij controleren bestaande uitnodigingen:", err);
+  }
+
+  // VALIDATIE 2: Controleer of dit e-mailadres al een actief lid is van de club
+  try {
+    const currentMembers = await getClubMembers(clubId);
+    const isAlreadyMember = currentMembers.some(m => m.userEmail?.trim().toLowerCase() === cleanEmail);
+    if (isAlreadyMember) {
+      throw new Error('Dit e-mailadres is al actief lid van deze club.');
+    }
+
+    // Controleer ook of e-mailadres overeenkomt met de club-eigenaar
+    const clubSnap = await getDoc(doc(db, 'clubs', clubId));
+    if (clubSnap.exists()) {
+      const ownerUid = clubSnap.data().ownerUid;
+      if (ownerUid) {
+        const ownerSnap = await getDoc(doc(db, 'users', ownerUid));
+        if (ownerSnap.exists()) {
+          const ownerEmail = ownerSnap.data().email || ownerSnap.data().profiel?.email;
+          if (ownerEmail && ownerEmail.trim().toLowerCase() === cleanEmail) {
+            throw new Error('Dit e-mailadres is al actief lid (eigenaar) van deze club.');
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('actief lid')) {
+      throw err;
+    }
+    console.warn("Fout bij controleren clubleden:", err);
   }
 
   const now = Date.now();
@@ -123,6 +178,31 @@ export async function createInvite(
         expiresAt
       }
     });
+
+    // Verstuur e-mailnotificatie naar genodigde
+    try {
+      let clubName = 'Club Workspace';
+      const clubSnap = await getDoc(doc(db, 'clubs', clubId));
+      if (clubSnap.exists()) {
+        clubName = clubSnap.data().naam || 'Club Workspace';
+      }
+
+      let inviterName = 'De Clubbeheerder';
+      const inviterSnap = await getDoc(doc(db, 'users', adminUid));
+      if (inviterSnap.exists()) {
+        inviterName = inviterSnap.data().profiel?.naam || inviterSnap.data().naam || 'De Clubbeheerder';
+      }
+
+      await sendClubInviteEmail({
+        recipientEmail: cleanEmail,
+        recipientName: cleanName,
+        clubName,
+        role,
+        inviterName
+      });
+    } catch (e) {
+      console.warn("Fout bij verzenden van uitnodigingse-mail:", e);
+    }
 
     return inviteRef.id;
   } catch (err) {
@@ -281,47 +361,157 @@ export async function getPendingInvitesForEmail(email: string): Promise<ClubInvi
   }
 }
 
+export interface AcceptedInviteInfo {
+  clubId: string;
+  clubName: string;
+  role: InviteRole;
+}
+
 /**
- * Accepteert een uitnodiging (voegt gebruiker toe aan club_members en werkt status bij).
+ * Controleert automatisch bij registratie of inloggen of er openstaande uitnodigingen zijn voor dit e-mailadres,
+ * accepteert deze automatisch, voegt het lid toe aan club_members, en retourneert de geaccepteerde uitnodigingen.
  */
-export async function acceptInvite(inviteId: string, userUid: string): Promise<void> {
-  if (!inviteId || !userUid) return;
+export async function checkAndAcceptPendingInvites(
+  userUid: string,
+  userEmail: string
+): Promise<AcceptedInviteInfo[]> {
+  if (!userUid || !userEmail) return [];
+  const cleanEmail = userEmail.trim().toLowerCase();
 
   try {
-    const inviteRef = doc(db, 'club_invites', inviteId);
-    const inviteSnap = await getDoc(inviteRef);
+    const invitesRef = collection(db, 'club_invites');
+    const q = query(
+      invitesRef,
+      where('email', '==', cleanEmail),
+      where('status', '==', 'pending')
+    );
+    const snap = await getDocs(q);
 
-    if (!inviteSnap.exists()) {
-      throw new Error('Uitnodiging niet gevonden.');
+    if (snap.empty) {
+      return [];
     }
 
-    const invite = inviteSnap.data() as ClubInvite;
+    const now = Date.now();
+    const acceptedInvites: AcceptedInviteInfo[] = [];
 
-    // 1. Voeg toe aan club_members
-    const memberDocRef = doc(db, 'club_members', `${invite.clubId}_${userUid}`);
-    await setDoc(memberDocRef, {
-      clubId: invite.clubId,
-      userUid,
-      role: invite.role,
-      status: 'active',
-      joinedAt: Date.now()
-    });
+    for (const docSnap of snap.docs) {
+      const invite = { id: docSnap.id, ...docSnap.data() } as ClubInvite;
 
-    // 2. Update uitnodiging status naar accepted
-    await updateDoc(inviteRef, {
-      status: 'accepted'
-    });
+      // Sla verlopen uitnodigingen over
+      if (invite.expiresAt && invite.expiresAt <= now) {
+        continue;
+      }
 
-    // 3. Auditlog
-    await writeAuditLog({
-      adminUid: userUid,
-      clubId: invite.clubId,
-      inviteId,
-      action: 'club_invite_accepted',
-      oldValue: { id: inviteId, status: 'pending' },
-      newValue: { id: inviteId, status: 'accepted', userUid }
-    });
+      // 1. Voeg toe aan club_members (voorkom dubbele records met docId `${clubId}_${userUid}`)
+      const memberDocRef = doc(db, 'club_members', `${invite.clubId}_${userUid}`);
+      const memberSnap = await getDoc(memberDocRef);
+
+      if (!memberSnap.exists()) {
+        await setDoc(memberDocRef, {
+          clubId: invite.clubId,
+          userUid,
+          role: invite.role,
+          status: 'active',
+          joinedAt: now
+        });
+      } else {
+        await updateDoc(memberDocRef, {
+          status: 'active',
+          role: invite.role
+        });
+      }
+
+      // 2. Werk eventueel het lidmaatschap van de gebruiker bij naar 'club' in de users-collectie
+      try {
+        const userDocRef = doc(db, 'users', userUid);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          const uData = userDocSnap.data();
+          if (!uData.membership || uData.membership.type === 'gratis' || uData.membership.type === 'coach') {
+            await updateDoc(userDocRef, {
+              'membership.type': 'club',
+              'membership.status': 'active',
+              'membership.clubId': invite.clubId
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Kon gebruikerslidmaatschap niet automatisch upgraden bij acceptatie:", e);
+      }
+
+      // 3. Update uitnodiging naar status 'accepted'
+      const inviteRef = doc(db, 'club_invites', invite.id);
+      await updateDoc(inviteRef, {
+        status: 'accepted'
+      });
+
+      // 4. Auditlog
+      await writeAuditLog({
+        adminUid: userUid,
+        clubId: invite.clubId,
+        inviteId: invite.id,
+        action: 'club_invite_accepted',
+        oldValue: { id: invite.id, status: 'pending' },
+        newValue: { id: invite.id, status: 'accepted', userUid }
+      });
+
+      // Ophalen clubnaam en aanmaker gegevens voor e-mail notificaties en welkomstscherm
+      let clubName = 'Club Workspace';
+      try {
+        const clubSnap = await getDoc(doc(db, 'clubs', invite.clubId));
+        if (clubSnap.exists()) {
+          clubName = clubSnap.data().naam || 'Club Workspace';
+        }
+      } catch (e) {
+        console.warn("Kon clubnaam niet ophalen voor welkomstbericht:", e);
+      }
+
+      // 5. Verstuur E-mailnotificaties (Toegevoegd aan Club Workspace & Uitnodiging Geaccepteerd)
+      try {
+        // A. E-mail naar het nieuwe lid (Toegevoegd aan Club Workspace)
+        await sendAddedToClubWorkspaceEmail({
+          recipientEmail: cleanEmail,
+          recipientName: invite.displayName || userEmail,
+          clubName,
+          role: invite.role
+        });
+
+        // B. E-mail naar de clubbeheerder die de uitnodiging verstuurde
+        if (invite.createdBy) {
+          const inviterSnap = await getDoc(doc(db, 'users', invite.createdBy));
+          if (inviterSnap.exists()) {
+            const inviterData = inviterSnap.data();
+            const inviterEmail = inviterData.profiel?.email || inviterData.email;
+            const inviterName = inviterData.profiel?.naam || inviterData.naam || 'Clubbeheerder';
+
+            if (inviterEmail) {
+              await sendInviteAcceptedEmail({
+                recipientEmail: inviterEmail,
+                inviterEmail,
+                inviterName,
+                memberName: invite.displayName || userEmail,
+                memberEmail: cleanEmail,
+                clubName,
+                role: invite.role
+              });
+            }
+          }
+        }
+      } catch (emailErr) {
+        console.warn("Fout bij verzenden van e-mailnotificaties bij uitnodigingsacceptatie:", emailErr);
+      }
+
+      acceptedInvites.push({
+        clubId: invite.clubId,
+        clubName,
+        role: invite.role
+      });
+    }
+
+    return acceptedInvites;
   } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, `club_invites/${inviteId}`);
+    console.warn("Fout bij automatisch accepteren van uitnodigingen:", err);
+    return [];
   }
 }
+

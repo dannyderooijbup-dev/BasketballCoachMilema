@@ -136,6 +136,38 @@
           }
         }
       }
+    },
+    "mail_queue": {
+      "description": "Outbox queue for central email notifications",
+      "documents": {
+        "{mailId}": {
+          "schema": {
+            "to": { "type": "string" },
+            "subject": { "type": "string" },
+            "html": { "type": "string" },
+            "templateId": { "type": "string" },
+            "status": { "type": "string" },
+            "createdAt": { "type": "number" },
+            "metadata": { "type": "map" }
+          }
+        }
+      }
+    },
+    "email_logs": {
+      "description": "Log of sent email notifications and delivery status",
+      "documents": {
+        "{logId}": {
+          "schema": {
+            "to": { "type": "string" },
+            "subject": { "type": "string" },
+            "templateId": { "type": "string" },
+            "status": { "type": "string" },
+            "sentAt": { "type": "number" },
+            "metadata": { "type": "map" },
+            "error": { "type": "string" }
+          }
+        }
+      }
     }
   }
 }

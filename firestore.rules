@@ -303,5 +303,18 @@ service cloud.firestore {
       // Clubbeheerders en admins mogen uitnodigingen verwijderen
       allow delete: if isSignedIn() && (canManageClubTeams(resource.data.clubId) || isAdmin());
     }
+
+    // ==========================================
+    // MAIL QUEUE & EMAIL LOGS COLLECTIES
+    // ==========================================
+    match /mail_queue/{mailId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /email_logs/{logId} {
+      allow create: if isSignedIn();
+      allow read: if isAdmin();
+    }
   }
 }

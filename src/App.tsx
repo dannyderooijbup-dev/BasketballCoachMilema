@@ -54,7 +54,9 @@ import AuthScreen from './components/AuthScreen';
 import AccountScreen from './components/AccountScreen';
 import AdminDashboard from './components/AdminDashboard';
 import ClubDashboard from './components/ClubDashboard';
+import ClubWelcomeModal from './components/ClubWelcomeModal';
 import { getClubForUser } from './services/clubService';
+import { checkAndAcceptPendingInvites } from './services/clubInviteService';
 import { db } from './firebase';
 import { canCreateTeam, getMaxTeams, getUpgradeReason, UpgradeReason } from './services/permissionsService';
 import { UpgradeModal } from './components/UpgradeModal';
@@ -100,6 +102,15 @@ export default function App() {
   const [teamPlayers, setTeamPlayers] = useState<TeamPlayer[]>([]);
   const [showAddTeamModal, setShowAddTeamModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [welcomeModalData, setWelcomeModalData] = useState<{
+    isOpen: boolean;
+    clubName: string;
+    role: string;
+  }>({
+    isOpen: false,
+    clubName: '',
+    role: ''
+  });
   const [upgradeReason, setUpgradeReason] = useState<UpgradeReason | null>(null);
   const [newTeamName, setNewTeamName] = useState('');
   const [isSavingTeam, setIsSavingTeam] = useState(false);
@@ -931,6 +942,23 @@ export default function App() {
           };
 
           await setDoc(userDocRef, initialDocData);
+        }
+
+        // 0. Auto-check & accept pending club invites for this user's email upon registration / login
+        if (currentUser.email) {
+          try {
+            const acceptedList = await checkAndAcceptPendingInvites(currentUser.uid, currentUser.email);
+            if (acceptedList.length > 0) {
+              const firstAccepted = acceptedList[0];
+              setWelcomeModalData({
+                isOpen: true,
+                clubName: firstAccepted.clubName,
+                role: firstAccepted.role
+              });
+            }
+          } catch (err) {
+            console.warn("Fout bij automatisch accepteren van club-uitnodigingen:", err);
+          }
         }
 
         // 1. Fetch Teams (Coach: userId == currentUser.uid, Club: clubId == currentClub.id)
@@ -4177,6 +4205,13 @@ export default function App() {
         isOpen={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
         reason={upgradeReason}
+      />
+
+      <ClubWelcomeModal
+        isOpen={welcomeModalData.isOpen}
+        clubName={welcomeModalData.clubName}
+        role={welcomeModalData.role}
+        onClose={() => setWelcomeModalData(prev => ({ ...prev, isOpen: false }))}
       />
     </div>
   );

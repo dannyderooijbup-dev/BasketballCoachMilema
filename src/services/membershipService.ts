@@ -93,20 +93,34 @@ export async function executeAdminAction({
 /**
  * Helper functie om profielgegevens van een doelgebruiker op te halen voor e-mailnotificaties.
  */
-async function getUserDetails(targetUid: string): Promise<{ email?: string; naam?: string; club?: string }> {
+async function getUserDetails(
+  targetUid: string,
+  fallbackEmail?: string,
+  fallbackName?: string,
+  fallbackClub?: string
+): Promise<{ email: string; naam: string; club: string }> {
+  let email = fallbackEmail || '';
+  let naam = fallbackName || '';
+  let club = fallbackClub || '';
+
   try {
     const userSnap = await getDoc(doc(db, 'users', targetUid));
     if (userSnap.exists()) {
       const data = userSnap.data();
-      const email = data.profiel?.email || data.email || '';
-      const naam = data.profiel?.naam || data.naam || '';
-      const club = data.profiel?.club || data.club || '';
-      return { email, naam, club };
+      email = data.profiel?.email || data.email || data.emailadres || data.userEmail || email;
+      naam = data.profiel?.naam || data.naam || data.displayName || naam;
+      club = data.profiel?.club || data.club || club;
     }
   } catch (err) {
     console.warn('Fout bij ophalen van gebruikersgegevens voor e-mail notificatie:', err);
   }
-  return {};
+
+  // Als email nog steeds leeg is maar targetUid een e-mailadres is:
+  if (!email && targetUid && targetUid.includes('@')) {
+    email = targetUid;
+  }
+
+  return { email, naam, club };
 }
 
 /**
@@ -115,7 +129,9 @@ async function getUserDetails(targetUid: string): Promise<{ email?: string; naam
 export async function startTrial(
   adminUid: string,
   targetUid: string,
-  currentMembership?: UserMembership | null
+  currentMembership?: UserMembership | null,
+  targetEmail?: string,
+  targetName?: string
 ): Promise<void> {
   const now = Date.now();
   const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
@@ -142,13 +158,15 @@ export async function startTrial(
 
   // Verstuur e-mailnotificatie
   try {
-    const { email, naam } = await getUserDetails(targetUid);
+    const { email, naam } = await getUserDetails(targetUid, targetEmail, targetName);
     if (email) {
       await sendTrialStartedEmail({
         recipientEmail: email,
         recipientName: naam || 'Coach',
         trialEndDate: newMembership.trialEnd || undefined,
       });
+    } else {
+      console.warn('Geen e-mailadres gevonden voor trial_started notificatie:', targetUid);
     }
   } catch (e) {
     console.warn('Fout bij verzenden van trial_started e-mail:', e);
@@ -165,7 +183,9 @@ export async function expireTrial(
   adminUid: string,
   targetUid: string,
   currentMembership?: UserMembership | null,
-  isManual: boolean = true
+  isManual: boolean = true,
+  targetEmail?: string,
+  targetName?: string
 ): Promise<void> {
   const now = Date.now();
   const newMembership: UserMembership = {
@@ -192,12 +212,14 @@ export async function expireTrial(
 
   // Verstuur e-mailnotificatie
   try {
-    const { email, naam } = await getUserDetails(targetUid);
+    const { email, naam } = await getUserDetails(targetUid, targetEmail, targetName);
     if (email) {
       await sendTrialExpiredEmail({
         recipientEmail: email,
         recipientName: naam || 'Coach',
       });
+    } else {
+      console.warn('Geen e-mailadres gevonden voor trial_expired notificatie:', targetUid);
     }
   } catch (e) {
     console.warn('Fout bij verzenden van trial_expired e-mail:', e);
@@ -211,7 +233,9 @@ export async function expireTrial(
 export async function activateCoach(
   adminUid: string,
   targetUid: string,
-  currentMembership?: UserMembership | null
+  currentMembership?: UserMembership | null,
+  targetEmail?: string,
+  targetName?: string
 ): Promise<void> {
   const now = Date.now();
   const newMembership: UserMembership = {
@@ -236,12 +260,14 @@ export async function activateCoach(
 
   // Verstuur e-mailnotificatie
   try {
-    const { email, naam } = await getUserDetails(targetUid);
+    const { email, naam } = await getUserDetails(targetUid, targetEmail, targetName);
     if (email) {
       await sendCoachApprovedEmail({
         recipientEmail: email,
         recipientName: naam || 'Coach',
       });
+    } else {
+      console.warn('Geen e-mailadres gevonden voor coach_approved notificatie:', targetUid);
     }
   } catch (e) {
     console.warn('Fout bij verzenden van coach_approved e-mail:', e);
@@ -255,7 +281,10 @@ export async function activateCoach(
 export async function activateClub(
   adminUid: string,
   targetUid: string,
-  currentMembership?: UserMembership | null
+  currentMembership?: UserMembership | null,
+  targetEmail?: string,
+  targetName?: string,
+  targetClub?: string
 ): Promise<void> {
   const now = Date.now();
   const newMembership: UserMembership = {
@@ -287,13 +316,15 @@ export async function activateClub(
 
   // Verstuur e-mailnotificatie
   try {
-    const { email, naam, club } = await getUserDetails(targetUid);
+    const { email, naam, club } = await getUserDetails(targetUid, targetEmail, targetName, targetClub);
     if (email) {
       await sendClubApprovedEmail({
         recipientEmail: email,
         recipientName: naam || 'Club Beheerder',
         clubName: club || 'je Club Workspace',
       });
+    } else {
+      console.warn('Geen e-mailadres gevonden voor club_approved notificatie:', targetUid);
     }
   } catch (e) {
     console.warn('Fout bij verzenden van club_approved e-mail:', e);

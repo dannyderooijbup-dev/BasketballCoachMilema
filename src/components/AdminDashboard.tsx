@@ -243,19 +243,19 @@ export default function AdminDashboard({ isAdmin, currentUserId }: AdminDashboar
       } else {
         switch (confirmDialog.targetValue) {
           case 'trial':
-            await startTrial(adminUid, selectedUser.id, selectedUser.membership);
+            await startTrial(adminUid, selectedUser.id, selectedUser.membership, selectedUser.email, selectedUser.naam);
             setToastMessage(`Proefperiode van 14 dagen succesvol gestart voor ${userName}!`);
             break;
           case 'expire_trial':
-            await expireTrial(adminUid, selectedUser.id, selectedUser.membership, true);
+            await expireTrial(adminUid, selectedUser.id, selectedUser.membership, true, selectedUser.email, selectedUser.naam);
             setToastMessage(`Proefperiode van ${userName} succesvol handmatig beëindigd!`);
             break;
           case 'coach':
-            await activateCoach(adminUid, selectedUser.id, selectedUser.membership);
+            await activateCoach(adminUid, selectedUser.id, selectedUser.membership, selectedUser.email, selectedUser.naam);
             setToastMessage(`Coach lidmaatschap succesvol geactiveerd voor ${userName}!`);
             break;
           case 'club':
-            await activateClub(adminUid, selectedUser.id, selectedUser.membership);
+            await activateClub(adminUid, selectedUser.id, selectedUser.membership, selectedUser.email, selectedUser.naam, selectedUser.club);
             setToastMessage(`Club lidmaatschap succesvol geactiveerd voor ${userName}!`);
             break;
           case 'pending':

@@ -52,7 +52,7 @@ export const processMailQueue = onDocumentCreated(
 
     try {
       const recipient = Array.isArray(to) ? to : [to];
-      const sender = process.env.SENDER_EMAIL || "Basketball Coach GameStats <noreply@gamestats.app>";
+      const sender = process.env.SENDER_EMAIL || "Basketball Coach GameStats <onboarding@resend.dev>";
 
       const response = await resend.emails.send({
         from: sender,

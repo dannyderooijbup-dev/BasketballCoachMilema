@@ -69,7 +69,7 @@ export interface TemplateParams {
  * Bouwt een centrale, responsive dark-themed HTML e-mailtemplate met Basketball Coach GameStats branding.
  */
 export function generateEmailHtml(params: TemplateParams): string {
-  const appUrl = typeof window !== 'undefined' ? window.location.origin : 'https://gamestats.app';
+  const appUrl = typeof window !== 'undefined' ? window.location.origin : 'https://app.basketballcoach.nl';
   const ctaTargetUrl = params.ctaUrl || appUrl;
 
   const highlightHtml = params.highlightBox && params.highlightBox.length > 0

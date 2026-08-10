@@ -54,6 +54,8 @@ export const processMailQueue = onDocumentCreated(
       const recipient = Array.isArray(to) ? to : [to];
       const sender = "Basketball Coach GameStats <onboarding@resend.dev>";
 
+      console.log("[processMailQueue] LIVE SENDER:", sender);
+
       const response = await resend.emails.send({
         from: sender,
         to: recipient,

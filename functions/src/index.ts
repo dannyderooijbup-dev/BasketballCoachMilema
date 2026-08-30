@@ -52,7 +52,7 @@ export const processMailQueue = onDocumentCreated(
 
     try {
       const recipient = Array.isArray(to) ? to : [to];
-      const sender = "Basketball Coach GameStats <onboarding@resend.dev>";
+      const sender = "Basketball Coach GameStats <noreply@basketballcoach.nl>";
 
       console.log("[processMailQueue] LIVE SENDER:", sender);
 

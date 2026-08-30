@@ -77,7 +77,7 @@ exports.processMailQueue = (0, firestore_1.onDocumentCreated)({
     const { to, subject, html, text } = mailData;
     try {
         const recipient = Array.isArray(to) ? to : [to];
-        const sender = "Basketball Coach GameStats <onboarding@resend.dev>";
+        const sender = "Basketball Coach GameStats <noreply@basketballcoach.nl>";
         console.log("[processMailQueue] LIVE SENDER:", sender);
         const response = await resend.emails.send({
             from: sender,

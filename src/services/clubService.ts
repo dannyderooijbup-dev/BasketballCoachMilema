@@ -63,9 +63,19 @@ export async function ensureClubMemberRecord(
     if (snap.empty) {
       const docId = `${clubId}_${userUid}`;
       const memberDocRef = doc(db, 'club_members', docId);
+      
+      let emailToStore = '';
+      let nameToStore = '';
+      if (auth.currentUser && auth.currentUser.uid === userUid) {
+        emailToStore = auth.currentUser.email || '';
+        nameToStore = auth.currentUser.displayName || '';
+      }
+
       await setDoc(memberDocRef, {
         clubId,
         userUid,
+        userName: nameToStore,
+        userEmail: emailToStore,
         role,
         status,
         joinedAt: Date.now(),
@@ -207,21 +217,59 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
         id: docSnap.id,
         clubId: data.clubId,
         userUid: data.userUid,
+        userName: data.userName || '',
+        userEmail: data.userEmail || '',
         role: data.role || 'coach',
         status: data.status || 'active',
         joinedAt: data.joinedAt || Date.now(),
       };
 
-      // Ophalen naam/e-mail uit users collectie
+      // 1. Directe controle indien dit de huidige ingelogde gebruiker betreft
+      if (auth.currentUser && auth.currentUser.uid === data.userUid) {
+        if (!memberItem.userEmail && auth.currentUser.email) {
+          memberItem.userEmail = auth.currentUser.email;
+        }
+        if (!memberItem.userName && auth.currentUser.displayName) {
+          memberItem.userName = auth.currentUser.displayName;
+        }
+      }
+
+      // 2. Ophalen naam/e-mail uit users collectie (ondersteunt zowel profiel.email als root-level email)
       try {
         const userSnap = await getDoc(doc(db, 'users', data.userUid));
         if (userSnap.exists()) {
           const userData = userSnap.data();
-          memberItem.userName = userData.naam || '';
-          memberItem.userEmail = userData.email || '';
+          const profiel = userData.profiel || {};
+          if (!memberItem.userName) {
+            memberItem.userName = profiel.naam || userData.naam || '';
+          }
+          if (!memberItem.userEmail) {
+            memberItem.userEmail = profiel.email || userData.email || '';
+          }
         }
       } catch (e) {
         console.warn('Kon lid gebruikersprofiel niet verrijken:', e);
+      }
+
+      // 3. Fallback: als userEmail nog leeg is, check geaccepteerde club_invites
+      if (!memberItem.userEmail) {
+        try {
+          const invitesRef = collection(db, 'club_invites');
+          const qInv = query(invitesRef, where('clubId', '==', clubId), where('status', '==', 'accepted'));
+          const invSnap = await getDocs(qInv);
+          for (const invDoc of invSnap.docs) {
+            const invData = invDoc.data();
+            if (invData.userUid === data.userUid || invData.acceptedByUid === data.userUid) {
+              memberItem.userEmail = invData.email || '';
+              if (!memberItem.userName && invData.displayName) {
+                memberItem.userName = invData.displayName;
+              }
+              break;
+            }
+          }
+        } catch (e) {
+          // negeer eventuele query-fouten voor invites
+        }
       }
 
       members.push(memberItem);

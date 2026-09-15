@@ -9,7 +9,6 @@ import {
   Pencil, 
   CheckCircle2, 
   Clock, 
-  Info, 
   Sparkles, 
   X, 
   Check, 
@@ -22,6 +21,8 @@ import {
   Settings,
   AlertCircle
 } from 'lucide-react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 import { ClubWorkspace, ClubMember, ClubMemberRole, UserMembership, Team, ClubInvite, InviteRole } from '../types';
 import { 
   getClubForUser, 
@@ -50,6 +51,7 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
   const [invites, setInvites] = useState<ClubInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('leden');
+  const [ownerDisplay, setOwnerDisplay] = useState<string>('');
 
   // Name editing state
   const [isEditingName, setIsEditingName] = useState(false);
@@ -93,6 +95,25 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
       setClub(userClub);
       if (userClub) {
         setNewClubName(userClub.naam);
+
+        // Ophalen representatieve weergave voor eigenaar
+        if (userClub.ownerUid === currentUserId) {
+          setOwnerDisplay(auth.currentUser?.email ? `${auth.currentUser.email} (Jij)` : 'Jij (Clubbeheerder)');
+        } else if (userClub.ownerUid) {
+          try {
+            const ownerSnap = await getDoc(doc(db, 'users', userClub.ownerUid));
+            if (ownerSnap.exists()) {
+              const oData = ownerSnap.data();
+              const p = oData.profiel || {};
+              setOwnerDisplay(p.email || oData.email || p.naam || 'Clubbeheerder');
+            } else {
+              setOwnerDisplay('Clubbeheerder');
+            }
+          } catch {
+            setOwnerDisplay('Clubbeheerder');
+          }
+        }
+
         const [clubMembersList, teamsList] = await Promise.all([
           getClubMembers(userClub.id),
           getClubTeams(userClub.id)
@@ -359,52 +380,61 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
       </div>
 
       {/* Statistieken Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-surface p-5 rounded-2xl border border-white/5 space-y-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className="bg-surface p-4 sm:p-5 rounded-2xl border border-white/5 space-y-2">
           <div className="flex items-center justify-between text-text-muted">
             <span className="text-xs uppercase font-bold tracking-wider">Aantal Leden</span>
             <Users size={18} className="text-primary" />
           </div>
-          <div className="text-3xl font-mono font-black text-white">
-            {members.length} {members.length === 1 ? 'lid' : 'leden'}
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl sm:text-3xl font-mono font-black text-white">{members.length}</span>
+            <span className="text-xs text-text-muted font-bold uppercase tracking-wider">
+              {members.length === 1 ? 'lid' : 'leden'}
+            </span>
           </div>
           <div className="text-[11px] text-text-muted">
             {members.filter(m => m.status === 'active').length} actief in club
           </div>
         </div>
 
-        <div className="bg-surface p-5 rounded-2xl border border-white/5 space-y-2">
+        <div className="bg-surface p-4 sm:p-5 rounded-2xl border border-white/5 space-y-2">
           <div className="flex items-center justify-between text-text-muted">
             <span className="text-xs uppercase font-bold tracking-wider">Open Uitnodigingen</span>
             <Send size={18} className="text-amber-400" />
           </div>
-          <div className="text-3xl font-mono font-black text-white">
-            {pendingInvitesCount} {pendingInvitesCount === 1 ? 'uitnodiging' : 'uitnodigingen'}
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl sm:text-3xl font-mono font-black text-white">{pendingInvitesCount}</span>
+            <span className="text-xs text-amber-400 font-bold uppercase tracking-wider">
+              {pendingInvitesCount === 1 ? 'uitnodiging' : 'uitnodigingen'}
+            </span>
           </div>
           <div className="text-[11px] text-text-muted">
             Wachten op accordering
           </div>
         </div>
 
-        <div className="bg-surface p-5 rounded-2xl border border-white/5 space-y-2">
+        <div className="bg-surface p-4 sm:p-5 rounded-2xl border border-white/5 space-y-2">
           <div className="flex items-center justify-between text-text-muted">
             <span className="text-xs uppercase font-bold tracking-wider">Club Teams</span>
             <Shield size={18} className="text-cyan-400" />
           </div>
-          <div className="text-3xl font-mono font-black text-white">
-            {clubTeams.length} {clubTeams.length === 1 ? 'team' : 'teams'}
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl sm:text-3xl font-mono font-black text-white">{clubTeams.length}</span>
+            <span className="text-xs text-text-muted font-bold uppercase tracking-wider">
+              {clubTeams.length === 1 ? 'team' : 'teams'}
+            </span>
           </div>
           <div className="text-[11px] text-text-muted">
             Gedeeld binnen club workspace
           </div>
         </div>
 
-        <div className="bg-surface p-5 rounded-2xl border border-white/5 space-y-2">
+        <div className="bg-surface p-4 sm:p-5 rounded-2xl border border-white/5 space-y-2">
           <div className="flex items-center justify-between text-text-muted">
             <span className="text-xs uppercase font-bold tracking-wider">Lidmaatschap</span>
             <Crown size={18} className="text-amber-400" />
           </div>
-          <div className="text-xl font-bold text-white uppercase tracking-tight">
+          <div className="text-lg sm:text-xl font-bold text-white uppercase tracking-tight truncate">
             Club Premium
           </div>
           <div className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
@@ -414,19 +444,19 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
         </div>
       </div>
 
-      {/* Navigatie Tabs */}
-      <div className="flex items-center gap-2 border-b border-white/10 pb-1">
+      {/* Navigatie Tabs (2e menu) */}
+      <div className="w-full bg-surface/70 p-1 rounded-2xl border border-white/5 grid grid-cols-3 gap-1 sm:flex sm:bg-transparent sm:p-0 sm:border-0 sm:border-b sm:border-white/10 sm:pb-1 sm:rounded-none">
         <button
           onClick={() => setActiveTab('leden')}
-          className={`px-5 py-3 rounded-2xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+          className={`py-2.5 px-2 sm:px-5 sm:py-3 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2.5 transition-all cursor-pointer ${
             activeTab === 'leden'
               ? 'bg-primary text-white shadow-lg shadow-primary/20'
               : 'text-text-muted hover:text-white hover:bg-white/5'
           }`}
         >
-          <Users2 size={18} />
-          <span>Leden</span>
-          <span className={`px-2 py-0.5 rounded-full text-xs font-mono font-bold ${
+          <Users2 size={16} className="shrink-0 sm:w-[18px] sm:h-[18px]" />
+          <span className="truncate">Leden</span>
+          <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold shrink-0 ${
             activeTab === 'leden' ? 'bg-white/20 text-white' : 'bg-white/10 text-text-muted'
           }`}>
             {members.length}
@@ -435,16 +465,16 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
 
         <button
           onClick={() => setActiveTab('uitnodigingen')}
-          className={`px-5 py-3 rounded-2xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+          className={`py-2.5 px-2 sm:px-5 sm:py-3 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2.5 transition-all cursor-pointer ${
             activeTab === 'uitnodigingen'
               ? 'bg-primary text-white shadow-lg shadow-primary/20'
               : 'text-text-muted hover:text-white hover:bg-white/5'
           }`}
         >
-          <Send size={18} />
-          <span>Uitnodigingen</span>
+          <Send size={16} className="shrink-0 sm:w-[18px] sm:h-[18px]" />
+          <span className="truncate">Uitnodigingen</span>
           {pendingInvitesCount > 0 && (
-            <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-500 text-dark">
+            <span className="px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold bg-amber-500 text-dark shrink-0">
               {pendingInvitesCount}
             </span>
           )}
@@ -452,20 +482,20 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
 
         <button
           onClick={() => setActiveTab('instellingen')}
-          className={`px-5 py-3 rounded-2xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+          className={`py-2.5 px-2 sm:px-5 sm:py-3 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2.5 transition-all cursor-pointer ${
             activeTab === 'instellingen'
               ? 'bg-primary text-white shadow-lg shadow-primary/20'
               : 'text-text-muted hover:text-white hover:bg-white/5'
           }`}
         >
-          <Settings size={18} />
-          <span>Instellingen</span>
+          <Settings size={16} className="shrink-0 sm:w-[18px] sm:h-[18px]" />
+          <span className="truncate">Instellingen</span>
         </button>
       </div>
 
       {/* TAB 1: LEDEN */}
       {activeTab === 'leden' && (
-        <div className="bg-surface rounded-3xl p-6 sm:p-8 border border-white/10 shadow-xl space-y-6">
+        <div className="bg-surface rounded-2xl sm:rounded-3xl p-4 sm:p-8 border border-white/10 shadow-xl space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
             <div>
               <h2 className="text-xl font-display font-black italic uppercase tracking-tight text-white flex items-center gap-2">
@@ -497,19 +527,25 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
                   <tr key={member.id} className="hover:bg-white/[0.02] transition-colors">
                     <td className="py-4 px-4 font-semibold text-white flex items-center gap-3">
                       <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary font-black flex items-center justify-center border border-primary/20 shrink-0">
-                        {(member.userName || member.userEmail || 'C')[0].toUpperCase()}
+                        {((member.userName || member.userEmail || (member.userUid === currentUserId && auth.currentUser?.email) || 'C')[0] || 'C').toUpperCase()}
                       </div>
                       <div>
                         <div className="font-bold text-white">
-                          {member.userName || 'Coach'}
+                          {member.userName || (member.userEmail ? member.userEmail.split('@')[0] : (member.userUid === currentUserId && auth.currentUser?.displayName ? auth.currentUser.displayName : 'Coach'))}
                         </div>
                         {member.userUid === currentUserId && (
                           <span className="text-[10px] text-primary font-bold uppercase tracking-wider">(Jij)</span>
                         )}
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-text-muted font-mono text-xs">
-                      {member.userEmail || member.userUid}
+                    <td className="py-4 px-4 text-xs font-mono">
+                      {member.userEmail ? (
+                        <span className="text-white/85">{member.userEmail}</span>
+                      ) : member.userUid === currentUserId && auth.currentUser?.email ? (
+                        <span className="text-white/85">{auth.currentUser.email}</span>
+                      ) : (
+                        <span className="text-text-muted italic font-sans text-[11px]">Geen e-mailadres bekend</span>
+                      )}
                     </td>
                     <td className="py-4 px-4">
                       {getRoleBadge(member.role)}
@@ -549,7 +585,7 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
 
       {/* TAB 2: UITNODIGINGEN */}
       {activeTab === 'uitnodigingen' && (
-        <div className="bg-surface rounded-3xl p-6 sm:p-8 border border-white/10 shadow-xl space-y-6">
+        <div className="bg-surface rounded-2xl sm:rounded-3xl p-4 sm:p-8 border border-white/10 shadow-xl space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
             <div>
               <h2 className="text-xl font-display font-black italic uppercase tracking-tight text-white flex items-center gap-2">
@@ -634,7 +670,7 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
 
       {/* TAB 3: INSTELLINGEN */}
       {activeTab === 'instellingen' && (
-        <div className="bg-surface rounded-3xl p-6 sm:p-8 border border-white/10 shadow-xl space-y-6">
+        <div className="bg-surface rounded-2xl sm:rounded-3xl p-4 sm:p-8 border border-white/10 shadow-xl space-y-6">
           <div className="border-b border-white/5 pb-4">
             <h2 className="text-xl font-display font-black italic uppercase tracking-tight text-white flex items-center gap-2">
               <Settings className="text-primary" size={20} />
@@ -677,8 +713,8 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
                 </div>
 
                 <div>
-                  <span className="text-text-muted block">Eigenaar UID:</span>
-                  <span className="font-mono text-white font-semibold">{club?.ownerUid}</span>
+                  <span className="text-text-muted block">Eigenaar:</span>
+                  <span className="text-white font-semibold">{ownerDisplay || 'Clubbeheerder'}</span>
                 </div>
 
                 <div>
@@ -697,57 +733,6 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
           </div>
         </div>
       )}
-
-      {/* Architectuur & Informatie Banner */}
-      <div className="bg-gradient-to-r from-surface to-dark p-6 sm:p-8 rounded-3xl border border-white/10 shadow-lg space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-cyan-500/15 text-cyan-400 flex items-center justify-center border border-cyan-500/20">
-            <Info size={20} />
-          </div>
-          <div>
-            <h3 className="text-base font-bold text-white font-display uppercase tracking-tight">
-              Club Workspace Uitnodigingssysteem
-            </h3>
-            <p className="text-xs text-text-muted">
-              Volledig in-app uitnodigingssysteem via Firestore met automatische auditlogs.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs pt-2">
-          <div className="bg-white/5 p-3.5 rounded-2xl border border-white/5 flex items-start gap-2.5">
-            <Send size={16} className="text-primary shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold text-white block mb-0.5">In-App Uitnodigingen</span>
-              <span className="text-text-muted leading-relaxed">Sla uitnodigingen direct op in Firestore in de collectie <code className="text-primary">club_invites</code> met 30 dagen geldigheid.</span>
-            </div>
-          </div>
-
-          <div className="bg-white/5 p-3.5 rounded-2xl border border-white/5 flex items-start gap-2.5">
-            <Shield size={16} className="text-primary shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold text-white block mb-0.5">Automatische Auditlogs</span>
-              <span className="text-text-muted leading-relaxed">Elke aanmaak of annulering wordt vastgelegd in <code className="text-cyan-400">audit_logs</code> met actie, beheerder en waarden.</span>
-            </div>
-          </div>
-
-          <div className="bg-white/5 p-3.5 rounded-2xl border border-white/5 flex items-start gap-2.5">
-            <Sparkles size={16} className="text-primary shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold text-white block mb-0.5">Realtime Synchronisatie</span>
-              <span className="text-text-muted leading-relaxed">Wijzigingen in uitnodigingen worden direct realtime bijgewerkt via Firestore snapshot listeners.</span>
-            </div>
-          </div>
-
-          <div className="bg-white/5 p-3.5 rounded-2xl border border-white/5 flex items-start gap-2.5">
-            <Crown size={16} className="text-primary shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold text-white block mb-0.5">Voorbereid op Registratie</span>
-              <span className="text-text-muted leading-relaxed">Gegevensstructuur is klaar voor automatische koppeling zodra een coach zich registreert.</span>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* DIALOG MODAL: Lid Uitnodigen */}
       <AnimatePresence>

@@ -18,6 +18,7 @@ import {
   Trophy,
   Activity,
   BarChart3,
+  BarChart2,
   Download,
   RotateCcw,
   Pencil,
@@ -60,6 +61,8 @@ import { checkAndAcceptPendingInvites } from './services/clubInviteService';
 import { db } from './firebase';
 import { canCreateTeam, getMaxTeams, getUpgradeReason, UpgradeReason } from './services/permissionsService';
 import { UpgradeModal } from './components/UpgradeModal';
+import { PlayerMatchStatsModal } from './components/PlayerMatchStatsModal';
+import { LiveCourtScouting } from './components/LiveCourtScouting';
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -285,6 +288,7 @@ export default function App() {
   const [seasonTabSeasonFilter, setSeasonTabSeasonFilter] = useState<string>('All');
   const [showMatchStartModal, setShowMatchStartModal] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<MatchHistoryEntry | null>(null);
+  const [selectedPlayerForStats, setSelectedPlayerForStats] = useState<Player | null>(null);
   const [detailSeason, setDetailSeason] = useState<string>('2026/2027');
 
   useEffect(() => {
@@ -2778,80 +2782,18 @@ export default function App() {
         </div>
       )}
  
-       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-         {filteredPlayers.map(player => {
-           const liveTime = player.isRunning && player.lastStartTime 
-             ? player.totalTime + (Date.now() - player.lastStartTime) 
-             : player.totalTime;
- 
-           return (
-             <motion.div 
-               key={player.id}
-               layout
-               className={`rounded-2xl overflow-hidden shadow-xl border transition-colors ${getTeamBgColorClass(activeTeamId)}`}
-             >
-               <div className="p-4 flex justify-between items-center bg-white/5 border-b border-white/5 gap-2">
-                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                   <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-black flex-shrink-0">
-                     #{player.number}
-                   </div>
-                   <div className="min-w-0 flex-1">
-                     <h3 className={`text-white leading-tight ${getNameFontSize(player.name)} truncate`} title={player.name}>
-                       {player.name}
-                     </h3>
-                     <span className="text-[10px] text-text-muted uppercase tracking-wider font-bold">{player.position}</span>
-                   </div>
-                 </div>
-                 <div className="text-right flex-shrink-0">
-                   <div className={`text-3xl font-mono font-black ${player.isRunning && gameClockRunning ? 'text-primary animate-pulse' : (player.isRunning ? 'text-orange-400' : 'text-white')}`}>
-                     {formatTime(liveTime)}
-                   </div>
-                   {/* Beurten count removed */}
-                 </div>
-               </div>
- 
-               <div className="p-4 space-y-6">
-                 <div className="grid grid-cols-4 gap-2 sm:gap-3">
-                   <StatButton label="PTN" value={player.stats.points} onAdd={() => updateStat(player.id, 'points', 1)} onSub={() => updateStat(player.id, 'points', -1)} />
-                   <StatButton label="FG" value={`${player.stats.fgm}/${player.stats.fga}`} onAdd={() => updateStat(player.id, 'fgm', 1)} onSub={() => updateStat(player.id, 'fga', 1)} isSpecial />
-                   <StatButton label="3P" value={`${player.stats.threeFgm}/${player.stats.threeFga}`} onAdd={() => updateStat(player.id, 'threeFgm', 1)} onSub={() => updateStat(player.id, 'threeFga', 1)} isSpecial />
-                   <StatButton label="FT" value={`${player.stats.ftm}/${player.stats.fta}`} onAdd={() => updateStat(player.id, 'ftm', 1)} onSub={() => updateStat(player.id, 'fta', 1)} isSpecial />
-                 </div>
-                 
-                 <div className="grid grid-cols-2 xs:grid-cols-4 gap-2 sm:gap-3">
-                   <StatControl label="AST" value={player.stats.assists} onAdd={() => updateStat(player.id, 'assists', 1)} onSub={() => updateStat(player.id, 'assists', -1)} />
-                   <StatControl label="DEF REB" value={player.stats.defReb || 0} onAdd={() => updateStat(player.id, 'defReb', 1)} onSub={() => updateStat(player.id, 'defReb', -1)} />
-                   <StatControl label="OFF REB" value={player.stats.offReb || 0} onAdd={() => updateStat(player.id, 'offReb', 1)} onSub={() => updateStat(player.id, 'offReb', -1)} />
-                   <StatControl label="STL" value={player.stats.steals} onAdd={() => updateStat(player.id, 'steals', 1)} onSub={() => updateStat(player.id, 'steals', -1)} />
-                   <StatControl label="BLK" value={player.stats.blocks} onAdd={() => updateStat(player.id, 'blocks', 1)} onSub={() => updateStat(player.id, 'blocks', -1)} />
-                   <StatControl label="TO" value={player.stats.turnovers} onAdd={() => updateStat(player.id, 'turnovers', 1)} onSub={() => updateStat(player.id, 'turnovers', -1)} />
-                    <StatControl label="PF" value={player.stats.pf || 0} onAdd={() => updateStat(player.id, 'pf', 1)} onSub={() => updateStat(player.id, 'pf', -1)} />
-                   <button onClick={() => undoLastGlobalAction()} className="bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-text-muted text-[10px] font-bold transition-all border border-white/5 active:scale-95 py-3 sm:py-0">
-                     <RotateCcw size={12} className="mr-2" /> UNDO
-                   </button>
-                 </div>
-
-                <button 
-                  onClick={() => toggleTimer(player.id)}
-                  className={`w-full py-4 rounded-xl font-display font-black uppercase italic flex items-center justify-center gap-3 transition-all ${
-                    player.isRunning ? 'bg-red-500/20 text-red-500 border border-red-500/30' : 
-                    'bg-primary text-white shadow-lg shadow-primary/20 hover:scale-[1.02]'
-                  }`}
-                >
-                  {player.isRunning ? <Pause size={20} strokeWidth={3} /> : <Play size={20} fill="white" strokeWidth={3} />}
-                  {player.isRunning ? 'Wissel Uit' : 'Wissel In'}
-                </button>
-              </div>
-            </motion.div>
-          );
-        })}
-        {players.length === 0 && (
-          <div className="col-span-full py-20 text-center text-text-muted">
-            <Users className="mx-auto mb-4 opacity-20" size={48} />
-            <p>Geen spelers gevonden. Voeg spelers toe in het Spelers tabblad.</p>
-          </div>
-        )}
-      </div>
+       <LiveCourtScouting
+         filteredPlayers={filteredPlayers}
+         isMatchActive={isMatchActive}
+         activeTeamId={activeTeamId}
+         gameClockRunning={gameClockRunning}
+         getTeamBgColorClass={getTeamBgColorClass}
+         getNameFontSize={getNameFontSize}
+         updateStat={updateStat}
+         undoLastGlobalAction={undoLastGlobalAction}
+         toggleTimer={toggleTimer}
+         totalPlayersCount={players.length}
+       />
     </div>
   );
 
@@ -3116,6 +3058,13 @@ export default function App() {
               </div>
               <div className="flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                 <button 
+                  onClick={() => setSelectedPlayerForStats(player)}
+                  className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors active:scale-90"
+                  title="Bekijk wedstrijdstatistieken per wedstrijd"
+                >
+                  <BarChart2 size={18} />
+                </button>
+                <button 
                   onClick={() => {
                     setEditingPlayer(player);
                     setNewPlayerName(player.name);
@@ -3175,6 +3124,42 @@ export default function App() {
               </select>
             </div>
             {stats.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs uppercase font-bold text-text-muted">Speler stats:</span>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const pName = e.target.value;
+                    if (!pName) return;
+                    const found = players.find(p => p.name === pName);
+                    if (found) {
+                      setSelectedPlayerForStats(found);
+                    } else {
+                      const s = stats.find((st: any) => st.name === pName);
+                      if (s) {
+                        setSelectedPlayerForStats({
+                          id: s.id || `stats-${s.name}`,
+                          name: s.name,
+                          number: s.number,
+                          position: s.position || 'G',
+                          teamId: s.teamId || (activeTeamId === 'all' ? '' : activeTeamId),
+                          stats: { ...INITIAL_STATS },
+                          totalTime: s.totalTime || 0,
+                          isRunning: false
+                        });
+                      }
+                    }
+                  }}
+                  className="bg-dark border border-white/10 rounded-xl px-3 py-1.5 focus:outline-none focus:border-primary text-white text-xs cursor-pointer font-bold"
+                >
+                  <option value="">Kies speler per wedstrijd...</option>
+                  {stats.map((s: any) => (
+                    <option key={s.name} value={s.name}>#{s.number} {s.name} ({s.matches || 0} w.)</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {stats.length > 0 && (
               <button 
                 onClick={() => exportSeasonStatsToPDF(stats, theme, calculatedTotalPlusMinus, seasonTabSeasonFilter)}
                 className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-4 py-2 rounded-xl text-xs sm:text-sm font-black italic uppercase font-display transition-all active:scale-95 border border-primary/20 shadow-lg shadow-primary/5"
@@ -3193,9 +3178,18 @@ export default function App() {
                   <th className="px-3 sm:px-4 py-3 sm:py-4">W</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">Tijd AVG</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">PTN AVG</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4">FG%</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4">3P%</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4">FT%</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4">
+                    <span>FG%</span>
+                    <span className="block text-[8px] font-normal normal-case text-text-muted">M/A</span>
+                  </th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4">
+                    <span className="text-primary">3P%</span>
+                    <span className="block text-[8px] font-normal normal-case text-primary font-bold">M/A (tot)</span>
+                  </th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4">
+                    <span className="text-primary">FT%</span>
+                    <span className="block text-[8px] font-normal normal-case text-primary font-bold">M/A (tot)</span>
+                  </th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">REB</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">DEF REB</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">OFF REB</th>
@@ -3209,19 +3203,54 @@ export default function App() {
               </thead>
               <tbody>
                 {stats.map((s: any) => (
-                  <tr key={s.name} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                  <tr key={s.name} className="border-b border-white/5 hover:bg-white/5 transition-colors group">
                     <td className={`px-3 sm:px-4 py-3 sm:py-4 sticky left-0 sm:relative sm:bg-transparent z-10 transition-colors ${getTeamStickyBgColorClass(activeTeamId)}`}>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-primary">#{s.number}</span>
-                        <span className="font-medium text-xs sm:text-sm whitespace-nowrap">{s.name}</span>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-primary">#{s.number}</span>
+                          <span className="font-medium text-xs sm:text-sm whitespace-nowrap">{s.name}</span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const found = players.find(p => p.name === s.name || (p.number === s.number && (activeTeamId === 'all' || p.teamId === activeTeamId)));
+                            if (found) {
+                              setSelectedPlayerForStats(found);
+                            } else {
+                              setSelectedPlayerForStats({
+                                id: s.id || `stats-${s.name}`,
+                                name: s.name,
+                                number: s.number,
+                                position: s.position || 'G',
+                                teamId: s.teamId || (activeTeamId === 'all' ? '' : activeTeamId),
+                                stats: { ...INITIAL_STATS, points: s.points, fgm: s.fgm, fga: s.fga, threeFgm: s.threeFgm, threeFga: s.threeFga, ftm: s.ftm, fta: s.fta, rebounds: s.rebounds, defReb: s.defReb, offReb: s.offReb, assists: s.assists, steals: s.steals, blocks: s.blocks, turnovers: s.turnovers, pf: s.pf, plusMinus: s.plusMinus },
+                                totalTime: s.totalTime,
+                                isRunning: false
+                              });
+                            }
+                          }}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary text-primary hover:text-white transition-all text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-primary/20 shrink-0"
+                          title="Bekijk alle wedstrijden van deze speler"
+                        >
+                          <BarChart2 size={12} />
+                          <span className="hidden sm:inline">Wedstrijden</span>
+                        </button>
                       </div>
                     </td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{s.matches || 0}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{formatTime(s.matches > 0 ? s.totalTime / s.matches : 0)}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-bold text-primary text-xs sm:text-sm">{s.matches > 0 ? (s.points / s.matches).toFixed(1) : '0.0'}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.fgm, s.fga)}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.threeFgm, s.threeFga)}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.ftm, s.fta)}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap">
+                      <div>{calculatePercentage(s.fgm, s.fga)}</div>
+                      <div className="text-[10px] text-text-muted font-normal">{s.fgm || 0}/{s.fga || 0}</div>
+                    </td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap">
+                      <div className="font-bold text-white">{calculatePercentage(s.threeFgm, s.threeFga)}</div>
+                      <div className="text-[10px] text-primary font-semibold">{s.threeFgm || 0}/{s.threeFga || 0} tot</div>
+                    </td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap">
+                      <div className="font-bold text-white">{calculatePercentage(s.ftm, s.fta)}</div>
+                      <div className="text-[10px] text-primary font-semibold">{s.ftm || 0}/{s.fta || 0} tot</div>
+                    </td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.rebounds / s.matches).toFixed(1) : '0.0'}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? ((s.defReb || 0) / s.matches).toFixed(1) : '0.0'}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? ((s.offReb || 0) / s.matches).toFixed(1) : '0.0'}</td>
@@ -3272,9 +3301,18 @@ export default function App() {
                       <td className="px-3 sm:px-4 py-4 font-bold text-primary font-mono text-[11px] sm:text-sm">
                         {totalW > 0 ? (totalPoints / totalW).toFixed(1) : '0.0'}
                       </td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(totalFgm, totalFga)}</td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(total3Fgm, total3Fga)}</td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(totalFtm, totalFta)}</td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap">
+                        <div>{calculatePercentage(totalFgm, totalFga)}</div>
+                        <div className="text-[10px] text-text-muted font-normal">{totalFgm}/{totalFga}</div>
+                      </td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap">
+                        <div className="font-bold text-primary">{calculatePercentage(total3Fgm, total3Fga)}</div>
+                        <div className="text-[10px] text-orange-200 font-semibold">{total3Fgm}/{total3Fga} tot</div>
+                      </td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap">
+                        <div className="font-bold text-primary">{calculatePercentage(totalFtm, totalFta)}</div>
+                        <div className="text-[10px] text-orange-200 font-semibold">{totalFtm}/{totalFta} tot</div>
+                      </td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalRebounds / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalDefReb / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalOffReb / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
@@ -4094,7 +4132,20 @@ export default function App() {
                             <span className="font-bold text-base sm:text-lg truncate">{player.name}</span>
                             <span className="text-[9px] sm:text-xs text-text-muted bg-dark px-1.5 sm:px-2 py-0.5 rounded uppercase font-bold">{player.position}</span>
                           </div>
-                          <div className="text-lg sm:text-xl font-mono font-bold text-primary flex-shrink-0">{formatTime(player.totalTime)}</div>
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => {
+                                const found = players.find(p => p.name === player.name || p.id === player.id);
+                                setSelectedPlayerForStats(found || player);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-primary/15 hover:bg-primary text-primary hover:text-white transition-all text-xs font-bold flex items-center gap-1.5 cursor-pointer border border-primary/25"
+                              title="Bekijk alle wedstrijden van deze speler"
+                            >
+                              <BarChart2 size={13} />
+                              <span className="hidden xs:inline">Alle wedstrijden</span>
+                            </button>
+                            <div className="text-lg sm:text-xl font-mono font-bold text-primary flex-shrink-0">{formatTime(player.totalTime)}</div>
+                          </div>
                         </div>
                         
                         <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
@@ -4212,6 +4263,14 @@ export default function App() {
         clubName={welcomeModalData.clubName}
         role={welcomeModalData.role}
         onClose={() => setWelcomeModalData(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      <PlayerMatchStatsModal
+        player={selectedPlayerForStats}
+        history={history}
+        teams={teams}
+        theme={theme}
+        onClose={() => setSelectedPlayerForStats(null)}
       />
     </div>
   );

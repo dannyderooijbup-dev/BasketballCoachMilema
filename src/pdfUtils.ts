@@ -297,9 +297,9 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
       matches,
       formatTime(matches > 0 ? s.totalTime / matches : 0),
       matches > 0 ? (s.points / matches).toFixed(1) : '0.0',
-      `${calculatePercentage(s.fgm, s.fga)} (${s.fgm}/${s.fga})`,
-      `${calculatePercentage(s.threeFgm, s.threeFga)} (${s.threeFgm}/${s.threeFga})`,
-      `${calculatePercentage(s.ftm, s.fta)} (${s.ftm}/${s.fta})`,
+      calculatePercentage(s.fgm, s.fga),
+      calculatePercentage(s.threeFgm, s.threeFga),
+      calculatePercentage(s.ftm, s.fta),
       matches > 0 ? (s.rebounds / matches).toFixed(1) : '0.0',
       matches > 0 ? ((s.defReb || 0) / matches).toFixed(1) : '0.0',
       matches > 0 ? ((s.offReb || 0) / matches).toFixed(1) : '0.0',
@@ -317,9 +317,9 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
     totalTeamMatches,
     formatTime(totalTeamMatches > 0 ? totalTime / totalTeamMatches : 0),
     totalTeamMatches > 0 ? (totalPtn / totalTeamMatches).toFixed(1) : '0.0',
-    `${calculatePercentage(totalFgm, totalFga)} (${totalFgm}/${totalFga})`,
-    `${calculatePercentage(total3Fgm, total3Fga)} (${total3Fgm}/${total3Fga})`,
-    `${calculatePercentage(totalFtm, totalFta)} (${totalFtm}/${totalFta})`,
+    calculatePercentage(totalFgm, totalFga),
+    calculatePercentage(total3Fgm, total3Fga),
+    calculatePercentage(totalFtm, totalFta),
     totalTeamMatches > 0 ? (totalReb / totalTeamMatches).toFixed(1) : '0.0',
     totalTeamMatches > 0 ? (totalDefReb / totalTeamMatches).toFixed(1) : '0.0',
     totalTeamMatches > 0 ? (totalOffReb / totalTeamMatches).toFixed(1) : '0.0',
@@ -333,15 +333,15 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
 
   autoTable(doc, {
     startY: 48,
-    head: [['Speler', 'W', 'Tijd AVG', 'PTN AVG', 'FG% (M/A)', '3P% (M/A)', 'FT% (M/A)', 'REB AVG', 'DEF REB', 'OFF REB', 'AST AVG', 'STL AVG', 'BLK AVG', 'TO AVG', 'PF AVG', '+/-']],
+    head: [['Speler', 'W', 'Tijd AVG', 'PTN AVG', 'FG%', '3P%', 'FT%', 'REB AVG', 'DEF REB', 'OFF REB', 'AST AVG', 'STL AVG', 'BLK AVG', 'TO AVG', 'PF AVG', '+/-']],
     body: tableData,
     theme: 'plain',
     styles: {
       fillColor: isLight ? [255, 255, 255] : [30, 41, 59], // #FFFFFF or #1E293B
       textColor: isLight ? [15, 23, 42] : [255, 255, 255],
-      fontSize: 7,
+      fontSize: 7.5,
       font: 'helvetica',
-      cellPadding: 2,
+      cellPadding: 2.5,
       lineColor: isLight ? [226, 232, 240] : [15, 23, 42],
       lineWidth: 0.5,
     },
@@ -369,118 +369,4 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
   });
 
   doc.save(`seizoensstatistieken_${new Date().toISOString().split('T')[0]}.pdf`);
-}
-
-export function exportPlayerMatchLogToPDF(
-  player: { name: string; number: string; position: string },
-  matchData: { match: MatchHistoryEntry; playerStats: any }[],
-  theme: 'dark' | 'light' = 'dark',
-  seasonFilter: string = 'All'
-) {
-  const doc = new jsPDF();
-  const isLight = theme === 'light';
-
-  const paintPage = () => {
-    const pageSize = doc.internal.pageSize;
-    const w = pageSize.width ? pageSize.width : pageSize.getWidth();
-    const h = pageSize.height ? pageSize.height : pageSize.getHeight();
-    if (isLight) {
-      doc.setFillColor(226, 232, 240);
-    } else {
-      doc.setFillColor(15, 23, 42);
-    }
-    doc.rect(0, 0, w, h, 'F');
-    doc.setFillColor(255, 106, 0);
-    doc.rect(0, 0, 4, h, 'F');
-  };
-
-  paintPage();
-
-  doc.setFont('helvetica', 'bolditalic');
-  doc.setFontSize(11);
-  if (isLight) {
-    doc.setTextColor(255, 106, 0);
-  } else {
-    doc.setTextColor(255, 255, 255);
-  }
-  doc.text('BASKETBALL COACH', 14, 15);
-
-  doc.setFont('helvetica', 'bolditalic');
-  doc.setFontSize(20);
-  if (isLight) {
-    doc.setTextColor(15, 23, 42);
-  } else {
-    doc.setTextColor(255, 255, 255);
-  }
-  doc.text(`#${player.number} ${player.name.toUpperCase()}`, 14, 25);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(255, 106, 0);
-  doc.text(`${player.position}  |  Seizoen: ${seasonFilter === 'All' ? 'Alle Seizoenen' : seasonFilter}  |  ${matchData.length} Gespeelde Wedstrijden`, 14, 32);
-
-  doc.setDrawColor(255, 106, 0);
-  doc.setLineWidth(0.5);
-  doc.line(14, 35, 196, 35);
-
-  const tableData = matchData.map(({ match, playerStats }) => {
-    const st = playerStats.stats || playerStats;
-    const pmVal = st.plusMinus || 0;
-    const pmStr = pmVal > 0 ? `+${pmVal}` : `${pmVal}`;
-    const isStarter = Array.isArray(match.starting5) && (match.starting5.includes(player.name) || match.starting5.includes(playerStats.name));
-    const scoreStr = (match.teamScore !== undefined && match.opponentScore !== undefined) 
-      ? `${match.teamScore}-${match.opponentScore}` 
-      : '';
-
-    return [
-      formatDate(match.date).split(' om ')[0],
-      `VS ${match.opponent} ${scoreStr ? `(${scoreStr})` : ''}`,
-      isStarter ? 'Starter' : 'Bank',
-      formatTime(playerStats.totalTime || 0),
-      st.points || 0,
-      `${st.fgm || 0}/${st.fga || 0} (${calculatePercentage(st.fgm || 0, st.fga || 0)})`,
-      `${st.threeFgm || 0}/${st.threeFga || 0} (${calculatePercentage(st.threeFgm || 0, st.threeFga || 0)})`,
-      `${st.ftm || 0}/${st.fta || 0} (${calculatePercentage(st.ftm || 0, st.fta || 0)})`,
-      st.rebounds || 0,
-      st.assists || 0,
-      st.steals || 0,
-      st.blocks || 0,
-      st.turnovers || 0,
-      st.pf || 0,
-      pmStr
-    ];
-  });
-
-  autoTable(doc, {
-    startY: 42,
-    head: [['Datum', 'Tegenstander', 'Rol', 'Tijd', 'PTN', 'FG (M/A)', '3P (M/A)', 'FT (M/A)', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PF', '+/-']],
-    body: tableData,
-    theme: 'plain',
-    styles: {
-      fillColor: isLight ? [255, 255, 255] : [30, 41, 59],
-      textColor: isLight ? [15, 23, 42] : [255, 255, 255],
-      fontSize: 7,
-      font: 'helvetica',
-      cellPadding: 2,
-      lineColor: isLight ? [226, 232, 240] : [15, 23, 42],
-      lineWidth: 0.5,
-    },
-    headStyles: {
-      fillColor: [255, 106, 0],
-      textColor: [255, 255, 255],
-      fontStyle: 'bolditalic',
-    },
-    alternateRowStyles: {
-      fillColor: isLight ? [241, 245, 249] : [21, 32, 51],
-    },
-    margin: { left: 14, right: 14 },
-    willDrawPage: function(data: any) {
-      if (data.pageNumber !== 1) {
-        paintPage();
-      }
-    }
-  });
-
-  const safeName = player.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-  doc.save(`speler_statistieken_${safeName}_${new Date().toISOString().split('T')[0]}.pdf`);
 }

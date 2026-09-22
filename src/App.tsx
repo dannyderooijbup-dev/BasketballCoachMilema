@@ -323,6 +323,22 @@ export default function App() {
     if (isMatchActive && matchInactivePlayerIds.length > 0) {
       list = list.filter(p => !matchInactivePlayerIds.includes(p.id));
     }
+    if (isMatchActive) {
+      list = [...list].sort((a, b) => {
+        const aActive = a.isRunning ? 1 : 0;
+        const bActive = b.isRunning ? 1 : 0;
+        if (aActive !== bActive) {
+          return bActive - aActive; // Actieve spelers (isRunning === true) altijd bovenaan
+        }
+        // Secundaire sortering binnen de actieve en bank-groep: rugnummer (numeriek)
+        const numA = parseInt(a.number, 10);
+        const numB = parseInt(b.number, 10);
+        if (!isNaN(numA) && !isNaN(numB)) {
+          return numA - numB;
+        }
+        return (a.number || '').localeCompare(b.number || '', undefined, { numeric: true });
+      });
+    }
     return list;
   };
   const filteredPlayers = getFilteredPlayers();
@@ -2788,7 +2804,11 @@ export default function App() {
              <motion.div 
                key={player.id}
                layout
-               className={`rounded-2xl overflow-hidden shadow-xl border transition-colors ${getTeamBgColorClass(activeTeamId)}`}
+               className={`rounded-2xl overflow-hidden shadow-xl border transition-all ${
+                 isMatchActive && player.isRunning 
+                   ? 'ring-1 ring-primary/40 border-primary/30' 
+                   : 'border-white/5'
+               } ${getTeamBgColorClass(activeTeamId)}`}
              >
                <div className="p-4 flex justify-between items-center bg-white/5 border-b border-white/5 gap-2">
                  <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -2796,9 +2816,20 @@ export default function App() {
                      #{player.number}
                    </div>
                    <div className="min-w-0 flex-1">
-                     <h3 className={`text-white leading-tight ${getNameFontSize(player.name)} truncate`} title={player.name}>
-                       {player.name}
-                     </h3>
+                     <div className="flex items-center gap-2">
+                       <h3 className={`text-white leading-tight ${getNameFontSize(player.name)} truncate`} title={player.name}>
+                         {player.name}
+                       </h3>
+                       {isMatchActive && (
+                         <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${
+                           player.isRunning 
+                             ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                             : 'bg-white/5 text-text-muted border border-white/10'
+                         }`}>
+                           {player.isRunning ? 'Actief' : 'Bank'}
+                         </span>
+                       )}
+                     </div>
                      <span className="text-[10px] text-text-muted uppercase tracking-wider font-bold">{player.position}</span>
                    </div>
                  </div>

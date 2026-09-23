@@ -1,620 +1,724 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import React, { useState, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { 
   X, 
+  Download, 
   Trophy, 
   Calendar, 
   Clock, 
-  Target, 
-  Download, 
-  BarChart2, 
-  Shield, 
-  ChevronRight,
-  Flame,
-  Award
+  ChevronRight, 
+  Activity, 
+  Award,
+  Users,
+  Search,
+  ArrowUpDown,
+  ExternalLink
 } from 'lucide-react';
-import { Player, MatchHistoryEntry, Team } from '../types';
+import { MatchHistoryEntry, Player, Team } from '../types';
 import { formatTime, formatDate, calculatePercentage } from '../utils';
 import { exportPlayerMatchLogToPDF } from '../pdfUtils';
 
 interface PlayerMatchStatsModalProps {
-  player: Player;
+  player: { id?: string; name: string; number: string; position?: string };
+  allPlayers: Player[];
   history: MatchHistoryEntry[];
+  theme: 'dark' | 'light';
+  activeTeamId: string;
   teams: Team[];
-  allPlayers?: Player[];
-  theme?: string;
   onClose: () => void;
-  onSelectMatch?: (match: MatchHistoryEntry) => void;
-  onSelectPlayer?: (player: Player) => void;
+  onSelectPlayer: (player: { id?: string; name: string; number: string; position?: string }) => void;
+  onOpenMatchDetail: (match: MatchHistoryEntry) => void;
 }
+
+type SortField = 'date' | 'points' | 'totalTime' | 'plusMinus' | 'rebounds' | 'assists';
 
 export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
   player,
+  allPlayers,
   history,
+  theme,
+  activeTeamId,
   teams,
-  allPlayers = [],
-  theme = 'dark',
   onClose,
-  onSelectMatch,
-  onSelectPlayer
+  onSelectPlayer,
+  onOpenMatchDetail
 }) => {
   const [selectedSeason, setSelectedSeason] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [sortField, setSortField] = useState<SortField>('date');
+  const [sortAsc, setSortAsc] = useState<boolean>(false);
 
-  // Filter matches for this player and season
+  // Filter matches in which this player participated
   const playerMatches = useMemo(() => {
     return history
       .filter(m => {
+        // Season filter
         const matchSeason = m.season || '2026/2027';
         if (selectedSeason !== 'All' && matchSeason !== selectedSeason) {
           return false;
         }
-        // Check if player was in this match
-        return m.players.some(p => 
-          p.id === player.id || 
-          (p.name && player.name && p.name.trim().toLowerCase() === player.name.trim().toLowerCase())
+
+        // Check if player participated in this match
+        const found = m.players.some(p => 
+          (player.id && p.id === player.id) || 
+          p.name.trim().toLowerCase() === player.name.trim().toLowerCase()
         );
+        return found;
       })
-      .map(match => {
-        const pStats = match.players.find(p => 
-          p.id === player.id || 
-          (p.name && player.name && p.name.trim().toLowerCase() === player.name.trim().toLowerCase())
+      .map(m => {
+        const playerStats = m.players.find(p => 
+          (player.id && p.id === player.id) || 
+          p.name.trim().toLowerCase() === player.name.trim().toLowerCase()
         )!;
-        const isStarter = Array.isArray(match.starting5) && 
-          (match.starting5.includes(player.name) || match.starting5.includes(pStats.name));
-        
-        const isWin = (match.teamScore ?? 0) > (match.opponentScore ?? 0);
-        const isTie = (match.teamScore ?? 0) === (match.opponentScore ?? 0);
+
+        const isStarter = Array.isArray(m.starting5) && m.starting5.some(s => 
+          s.startsWith(`#${player.number} `) || 
+          s.includes(player.name) || 
+          s.includes(playerStats.name)
+        );
+
+        const hasScore = m.teamScore !== undefined && m.opponentScore !== undefined;
+        const isWin = hasScore && (m.teamScore! > m.opponentScore!);
+        const isLoss = hasScore && (m.teamScore! < m.opponentScore!);
 
         return {
-          match,
-          stats: pStats,
+          match: m,
+          playerStats,
           isStarter,
           isWin,
-          isTie
+          isLoss
         };
-      })
-      .sort((a, b) => b.match.date - a.match.date); // Most recent first
+      });
   }, [history, player, selectedSeason]);
 
-  // Aggregate stats across filtered matches
-  const totals = useMemo(() => {
-    const t = {
-      matches: playerMatches.length,
-      starterCount: 0,
-      totalTime: 0,
-      points: 0,
-      highScore: 0,
-      fgm: 0,
-      fga: 0,
-      threeFgm: 0,
-      threeFga: 0,
-      ftm: 0,
-      fta: 0,
-      rebounds: 0,
-      offReb: 0,
-      defReb: 0,
-      assists: 0,
-      steals: 0,
-      blocks: 0,
-      turnovers: 0,
-      pf: 0,
-      plusMinus: 0
-    };
+  // Filtered and sorted matches
+  const displayedMatches = useMemo(() => {
+    let list = [...playerMatches];
 
-    playerMatches.forEach(({ stats, isStarter }) => {
-      if (isStarter) t.starterCount++;
-      t.totalTime += stats.totalTime || 0;
-      const pts = stats.stats.points || 0;
-      t.points += pts;
-      if (pts > t.highScore) t.highScore = pts;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(pm => 
+        pm.match.opponent.toLowerCase().includes(q) ||
+        formatDate(pm.match.date).toLowerCase().includes(q)
+      );
+    }
 
-      t.fgm += stats.stats.fgm || 0;
-      t.fga += stats.stats.fga || 0;
-      t.threeFgm += stats.stats.threeFgm || 0;
-      t.threeFga += stats.stats.threeFga || 0;
-      t.ftm += stats.stats.ftm || 0;
-      t.fta += stats.stats.fta || 0;
+    list.sort((a, b) => {
+      let valA: number = 0;
+      let valB: number = 0;
 
-      t.rebounds += stats.stats.rebounds || 0;
-      t.offReb += stats.stats.offReb || 0;
-      t.defReb += stats.stats.defReb || 0;
-      t.assists += stats.stats.assists || 0;
-      t.steals += stats.stats.steals || 0;
-      t.blocks += stats.stats.blocks || 0;
-      t.turnovers += stats.stats.turnovers || 0;
-      t.pf += stats.stats.pf || 0;
-      t.plusMinus += stats.stats.plusMinus || 0;
+      switch (sortField) {
+        case 'date':
+          valA = a.match.date;
+          valB = b.match.date;
+          break;
+        case 'points':
+          valA = a.playerStats.stats.points || 0;
+          valB = b.playerStats.stats.points || 0;
+          break;
+        case 'totalTime':
+          valA = a.playerStats.totalTime || 0;
+          valB = b.playerStats.totalTime || 0;
+          break;
+        case 'plusMinus':
+          valA = a.playerStats.stats.plusMinus || 0;
+          valB = b.playerStats.stats.plusMinus || 0;
+          break;
+        case 'rebounds':
+          valA = a.playerStats.stats.rebounds || 0;
+          valB = b.playerStats.stats.rebounds || 0;
+          break;
+        case 'assists':
+          valA = a.playerStats.stats.assists || 0;
+          valB = b.playerStats.stats.assists || 0;
+          break;
+      }
+
+      return sortAsc ? valA - valB : valB - valA;
     });
 
-    return t;
+    return list;
+  }, [playerMatches, searchQuery, sortField, sortAsc]);
+
+  // Aggregate statistics for this player across the filtered matches
+  const aggregates = useMemo(() => {
+    const totalMatches = playerMatches.length;
+    if (totalMatches === 0) {
+      return {
+        totalMatches: 0,
+        wins: 0,
+        losses: 0,
+        totalTime: 0,
+        avgTime: 0,
+        totalPoints: 0,
+        ppg: '0.0',
+        highPoints: 0,
+        totalFgm: 0,
+        totalFga: 0,
+        total3Fgm: 0,
+        total3Fga: 0,
+        totalFtm: 0,
+        totalFta: 0,
+        totalReb: 0,
+        totalOffReb: 0,
+        totalDefReb: 0,
+        rpg: '0.0',
+        totalAst: 0,
+        apg: '0.0',
+        totalStl: 0,
+        spg: '0.0',
+        totalBlk: 0,
+        bpg: '0.0',
+        totalTo: 0,
+        tpg: '0.0',
+        totalPf: 0,
+        pfpg: '0.0',
+        totalPlusMinus: 0,
+        avgPlusMinus: '0.0',
+        starterCount: 0
+      };
+    }
+
+    let wins = 0;
+    let losses = 0;
+    let totalTime = 0;
+    let totalPoints = 0;
+    let highPoints = 0;
+    let totalFgm = 0, totalFga = 0;
+    let total3Fgm = 0, total3Fga = 0;
+    let totalFtm = 0, totalFta = 0;
+    let totalReb = 0, totalOffReb = 0, totalDefReb = 0;
+    let totalAst = 0, totalStl = 0, totalBlk = 0, totalTo = 0, totalPf = 0;
+    let totalPlusMinus = 0;
+    let starterCount = 0;
+
+    playerMatches.forEach(pm => {
+      if (pm.isWin) wins++;
+      if (pm.isLoss) losses++;
+      if (pm.isStarter) starterCount++;
+
+      const st = pm.playerStats.stats;
+      totalTime += pm.playerStats.totalTime || 0;
+      const pts = st.points || 0;
+      totalPoints += pts;
+      if (pts > highPoints) highPoints = pts;
+
+      totalFgm += st.fgm || 0;
+      totalFga += st.fga || 0;
+      total3Fgm += st.threeFgm || 0;
+      total3Fga += st.threeFga || 0;
+      totalFtm += st.ftm || 0;
+      totalFta += st.fta || 0;
+
+      totalReb += st.rebounds || 0;
+      totalOffReb += st.offReb || 0;
+      totalDefReb += st.defReb || 0;
+
+      totalAst += st.assists || 0;
+      totalStl += st.steals || 0;
+      totalBlk += st.blocks || 0;
+      totalTo += st.turnovers || 0;
+      totalPf += st.pf || 0;
+      totalPlusMinus += st.plusMinus || 0;
+    });
+
+    return {
+      totalMatches,
+      wins,
+      losses,
+      totalTime,
+      avgTime: totalTime / totalMatches,
+      totalPoints,
+      ppg: (totalPoints / totalMatches).toFixed(1),
+      highPoints,
+      totalFgm,
+      totalFga,
+      total3Fgm,
+      total3Fga,
+      totalFtm,
+      totalFta,
+      totalReb,
+      totalOffReb,
+      totalDefReb,
+      rpg: (totalReb / totalMatches).toFixed(1),
+      totalAst,
+      apg: (totalAst / totalMatches).toFixed(1),
+      totalStl,
+      spg: (totalStl / totalMatches).toFixed(1),
+      totalBlk,
+      bpg: (totalBlk / totalMatches).toFixed(1),
+      totalTo,
+      tpg: (totalTo / totalMatches).toFixed(1),
+      totalPf,
+      pfpg: (totalPf / totalMatches).toFixed(1),
+      totalPlusMinus,
+      avgPlusMinus: (totalPlusMinus / totalMatches).toFixed(1),
+      starterCount
+    };
   }, [playerMatches]);
 
-  const handleExportPDF = () => {
+  const handleDownloadPDF = () => {
+    const matchData = playerMatches.map(pm => ({
+      match: pm.match,
+      playerStats: pm.playerStats
+    }));
+
     exportPlayerMatchLogToPDF(
-      player,
-      playerMatches.map(pm => ({ match: pm.match, playerStats: pm.stats })),
-      theme === 'light' ? 'light' : 'dark',
+      {
+        name: player.name,
+        number: player.number,
+        position: player.position || 'Speler'
+      },
+      matchData,
+      theme,
       selectedSeason
     );
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 15 }}
-        className="bg-surface border border-white/10 rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden my-auto max-h-[92vh] flex flex-col"
-      >
-        {/* MODAL HEADER */}
-        <div className="p-4 sm:p-6 border-b border-white/10 bg-gradient-to-r from-surface to-dark flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary font-black italic text-xl sm:text-2xl shadow-inner shrink-0">
-              #{player.number}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl sm:text-2xl font-display font-black text-white italic tracking-tight">
-                  {player.name}
-                </h2>
-                <span className="text-[10px] sm:text-xs uppercase tracking-wider font-bold bg-white/10 text-primary px-2.5 py-0.5 rounded-full">
-                  {player.position}
-                </span>
-              </div>
-              <p className="text-text-muted text-xs flex items-center gap-2 mt-0.5">
-                <span>Individuele wedstrijdstatistieken</span>
-                <span>•</span>
-                <span className="text-white font-mono font-semibold">{totals.matches} {totals.matches === 1 ? 'wedstrijd' : 'wedstrijden'}</span>
-              </p>
-            </div>
-          </div>
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortField(field);
+      setSortAsc(false);
+    }
+  };
 
-          <div className="flex flex-wrap items-center gap-2.5 self-end sm:self-center">
-            {/* Quick player switcher */}
-            {allPlayers.length > 1 && onSelectPlayer && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-text-muted uppercase font-bold hidden md:inline">Speler:</span>
+  return (
+    <div className="fixed inset-0 bg-dark/95 backdrop-blur-md z-[110] flex items-end sm:items-center justify-center sm:p-4 overflow-y-auto">
+      <motion.div 
+        initial={{ y: "100%", opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: "100%", opacity: 0 }}
+        transition={{ type: "spring", damping: 25, stiffness: 300 }}
+        className="bg-surface w-full max-w-5xl max-h-[96vh] sm:max-h-[92vh] sm:rounded-3xl border-t sm:border border-white/10 shadow-2xl flex flex-col overflow-hidden"
+      >
+        {/* Modal Header */}
+        <div className="bg-white/5 p-4 sm:p-6 border-b border-white/5 flex-shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            
+            {/* Player Info with Switcher */}
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-primary text-white flex items-center justify-center font-display font-black text-xl sm:text-2xl italic shadow-lg shadow-primary/20 shrink-0">
+                #{player.number}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xl sm:text-2xl font-display font-black italic uppercase tracking-tighter truncate text-white">
+                    {player.name}
+                  </h3>
+                  <span className="text-[10px] text-text-muted bg-dark/60 border border-white/10 px-2 py-0.5 rounded font-bold uppercase shrink-0">
+                    {player.position || 'Speler'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] text-text-muted uppercase font-bold tracking-wider">Speler wisselen:</span>
+                  <select
+                    value={player.id || player.name}
+                    onChange={(e) => {
+                      const selected = allPlayers.find(p => p.id === e.target.value || p.name === e.target.value);
+                      if (selected) {
+                        onSelectPlayer(selected);
+                      }
+                    }}
+                    className="bg-dark border border-white/10 rounded-lg px-2 py-0.5 text-xs text-primary font-bold cursor-pointer focus:outline-none focus:border-primary"
+                  >
+                    {allPlayers.map(p => (
+                      <option key={p.id || p.name} value={p.id || p.name}>
+                        #{p.number} {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions: Season Filter, PDF Export, Close */}
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 self-end sm:self-auto">
+              <div className="flex items-center gap-1.5 bg-dark/70 border border-white/10 rounded-xl px-2.5 py-1.5">
+                <span className="text-[10px] text-text-muted uppercase font-black tracking-wider">Seizoen:</span>
                 <select
-                  value={player.id}
-                  onChange={(e) => {
-                    const next = allPlayers.find(p => p.id === e.target.value);
-                    if (next) onSelectPlayer(next);
-                  }}
-                  className="bg-dark/80 border border-white/10 text-white text-xs rounded-xl px-2.5 py-2 font-bold focus:outline-none focus:border-primary cursor-pointer max-w-[140px] truncate"
+                  value={selectedSeason}
+                  onChange={(e) => setSelectedSeason(e.target.value)}
+                  className="bg-transparent border-none text-white text-xs font-bold cursor-pointer focus:outline-none"
                 >
-                  {allPlayers.map(p => (
-                    <option key={p.id} value={p.id}>
-                      #{p.number} {p.name}
-                    </option>
-                  ))}
+                  <option value="All" className="bg-dark text-white">Alle Seizoenen</option>
+                  <option value="2026/2027" className="bg-dark text-white">2026/2027</option>
+                  <option value="2025/2026" className="bg-dark text-white">2025/2026</option>
+                  <option value="2024/2025" className="bg-dark text-white">2024/2025</option>
                 </select>
               </div>
-            )}
 
-            {/* Season filter */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-text-muted uppercase font-bold hidden md:inline">Seizoen:</span>
-              <select
-                value={selectedSeason}
-                onChange={(e) => setSelectedSeason(e.target.value)}
-                className="bg-dark/80 border border-white/10 text-white text-xs rounded-xl px-2.5 py-2 font-bold focus:outline-none focus:border-primary cursor-pointer"
-              >
-                <option value="All">Alle Seizoenen</option>
-                <option value="2026/2027">2026/2027</option>
-                <option value="2025/2026">2025/2026</option>
-                <option value="2024/2025">2024/2025</option>
-              </select>
-            </div>
+              {playerMatches.length > 0 && (
+                <button
+                  onClick={handleDownloadPDF}
+                  className="flex items-center gap-1.5 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 px-3 py-1.5 rounded-xl text-xs font-black uppercase italic font-display transition-all active:scale-95 shadow-md shadow-primary/5"
+                  title="Exporteer wedstrijden van deze speler naar PDF"
+                >
+                  <Download size={15} />
+                  <span className="hidden xs:inline">PDF</span>
+                </button>
+              )}
 
-            {/* PDF Export */}
-            {playerMatches.length > 0 && (
-              <button
-                onClick={handleExportPDF}
-                className="bg-primary/15 hover:bg-primary/25 text-primary border border-primary/30 px-3 py-2 rounded-xl text-xs font-black uppercase italic font-display flex items-center gap-1.5 transition-all active:scale-95 shadow"
-                title="Download rapport als PDF"
+              <button 
+                onClick={onClose} 
+                className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-text-muted hover:text-white transition-colors active:scale-90"
+                title="Sluiten"
               >
-                <Download size={14} />
-                <span className="hidden xs:inline">PDF</span>
+                <X size={20} />
               </button>
-            )}
-
-            {/* Close Button */}
-            <button
-              onClick={onClose}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-text-muted hover:text-white transition-colors"
-              title="Sluiten"
-            >
-              <X size={20} />
-            </button>
+            </div>
           </div>
         </div>
 
-        {/* MODAL BODY (SCROLLABLE) */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 scrollbar-thin scrollbar-thumb-white/10">
-          
-          {/* STATS OVERVIEW CARDS */}
-          <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2.5 sm:gap-3">
-            {/* Punten Card */}
-            <div className="bg-dark/50 p-3 sm:p-4 rounded-2xl border border-white/5 space-y-1">
-              <div className="flex items-center justify-between text-text-muted">
-                <span className="text-[10px] uppercase font-bold tracking-wider">Punten (PPG)</span>
-                <Flame size={14} className="text-primary" />
-              </div>
-              <div className="text-xl sm:text-2xl font-mono font-black text-primary">
-                {totals.matches > 0 ? (totals.points / totals.matches).toFixed(1) : '0.0'}
-              </div>
-              <div className="text-[10px] text-text-muted flex items-center justify-between">
-                <span>{totals.points} ptn tot</span>
-                <span className="text-amber-400 font-bold" title="Hoogste wedstrijdscore">High: {totals.highScore}</span>
-              </div>
-            </div>
+        {/* Scrollable Modal Body */}
+        <div className="p-4 sm:p-6 space-y-6 overflow-y-auto custom-scrollbar">
 
-            {/* Speeltijd Card */}
-            <div className="bg-dark/50 p-3 sm:p-4 rounded-2xl border border-white/5 space-y-1">
-              <div className="flex items-center justify-between text-text-muted">
-                <span className="text-[10px] uppercase font-bold tracking-wider">Speeltijd (MPG)</span>
-                <Clock size={14} className="text-cyan-400" />
+          {/* Aggregated KPI Summary Grid */}
+          <div className="bg-gradient-to-br from-primary/15 via-primary/5 to-transparent p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-primary/20 space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b border-white/5 pb-3">
+              <div>
+                <h4 className="font-display font-black uppercase italic tracking-tight text-sm sm:text-base text-primary flex items-center gap-2">
+                  <Award size={18} />
+                  Gemiddelden & Totalen ({selectedSeason === 'All' ? 'Alle Seizoenen' : selectedSeason})
+                </h4>
+                <p className="text-[10px] text-text-muted uppercase tracking-widest font-bold mt-0.5">
+                  Gebaseerd op {aggregates.totalMatches} gespeelde {aggregates.totalMatches === 1 ? 'wedstrijd' : 'wedstrijden'}
+                  {aggregates.starterCount > 0 && ` (${aggregates.starterCount}x basisopstelling)`}
+                </p>
               </div>
-              <div className="text-xl sm:text-2xl font-mono font-black text-white">
-                {formatTime(totals.matches > 0 ? totals.totalTime / totals.matches : 0)}
-              </div>
-              <div className="text-[10px] text-text-muted">
-                {formatTime(totals.totalTime)} totaal
-              </div>
-            </div>
-
-            {/* Driepunters (3P) Card - Met totaal aantal genomen en gemaakt! */}
-            <div className="bg-dark/50 p-3 sm:p-4 rounded-2xl border border-primary/20 bg-primary/[0.03] space-y-1">
-              <div className="flex items-center justify-between text-text-muted">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-primary">3-Pointers (3P)</span>
-                <Target size={14} className="text-primary" />
-              </div>
-              <div className="text-xl sm:text-2xl font-mono font-black text-white">
-                {calculatePercentage(totals.threeFgm, totals.threeFga)}
-              </div>
-              <div className="text-[10px] text-primary font-mono font-semibold">
-                {totals.threeFgm}/{totals.threeFga} gemaakt/tot
-              </div>
-              {totals.matches > 0 && (
-                <div className="text-[9px] text-text-muted">
-                  {(totals.threeFgm / totals.matches).toFixed(1)}/{(totals.threeFga / totals.matches).toFixed(1)} per w
+              <div className="text-left sm:text-right flex items-center gap-3">
+                {aggregates.totalMatches > 0 && (
+                  <div className="flex items-center gap-1.5 bg-dark/50 border border-white/10 px-3 py-1 rounded-xl">
+                    <Trophy size={14} className="text-amber-400" />
+                    <span className="text-xs font-mono font-black text-white">
+                      {aggregates.wins}W - {aggregates.losses}V
+                    </span>
+                  </div>
+                )}
+                <div>
+                  <span className="text-[9px] text-text-muted uppercase font-bold tracking-wider block">Speeltijd Totaal</span>
+                  <span className="font-mono text-sm sm:text-base font-black text-white">{formatTime(aggregates.totalTime)}</span>
                 </div>
-              )}
-            </div>
-
-            {/* Vrije Worpen (FT) Card - Met totaal aantal genomen en gemaakt! */}
-            <div className="bg-dark/50 p-3 sm:p-4 rounded-2xl border border-primary/20 bg-primary/[0.03] space-y-1">
-              <div className="flex items-center justify-between text-text-muted">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-primary">Vrije Worpen (FT)</span>
-                <Award size={14} className="text-primary" />
-              </div>
-              <div className="text-xl sm:text-2xl font-mono font-black text-white">
-                {calculatePercentage(totals.ftm, totals.fta)}
-              </div>
-              <div className="text-[10px] text-primary font-mono font-semibold">
-                {totals.ftm}/{totals.fta} gemaakt/tot
-              </div>
-              {totals.matches > 0 && (
-                <div className="text-[9px] text-text-muted">
-                  {(totals.ftm / totals.matches).toFixed(1)}/{(totals.fta / totals.matches).toFixed(1)} per w
-                </div>
-              )}
-            </div>
-
-            {/* Veldscores (FG) Card */}
-            <div className="bg-dark/50 p-3 sm:p-4 rounded-2xl border border-white/5 space-y-1">
-              <div className="flex items-center justify-between text-text-muted">
-                <span className="text-[10px] uppercase font-bold tracking-wider">Veldscores (FG)</span>
-                <Target size={14} className="text-emerald-400" />
-              </div>
-              <div className="text-xl sm:text-2xl font-mono font-black text-white">
-                {calculatePercentage(totals.fgm, totals.fga)}
-              </div>
-              <div className="text-[10px] text-text-muted font-mono">
-                {totals.fgm}/{totals.fga} totaal
               </div>
             </div>
 
-            {/* Rebounds Card */}
-            <div className="bg-dark/50 p-3 sm:p-4 rounded-2xl border border-white/5 space-y-1">
-              <div className="flex items-center justify-between text-text-muted">
-                <span className="text-[10px] uppercase font-bold tracking-wider">Rebounds (RPG)</span>
-                <Shield size={14} className="text-amber-400" />
+            {/* Quick Stat Cards */}
+            <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">
+              <div className="bg-dark/60 p-3 rounded-2xl border border-white/5 text-center">
+                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">PTN / Wedstrijd</p>
+                <p className="text-xl sm:text-2xl font-mono font-black text-primary mt-0.5">{aggregates.ppg}</p>
+                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">{aggregates.totalPoints} ptn (High: {aggregates.highPoints})</p>
               </div>
-              <div className="text-xl sm:text-2xl font-mono font-black text-white">
-                {totals.matches > 0 ? (totals.rebounds / totals.matches).toFixed(1) : '0.0'}
+
+              <div className="bg-dark/60 p-3 rounded-2xl border border-white/5 text-center">
+                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">Speeltijd Gem.</p>
+                <p className="text-xl sm:text-2xl font-mono font-black text-white mt-0.5">{formatTime(aggregates.avgTime)}</p>
+                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">per wedstrijd</p>
               </div>
-              <div className="text-[10px] text-text-muted">
-                {totals.defReb} DEF • {totals.offReb} OFF
+
+              <div className="bg-dark/60 p-3 rounded-2xl border border-white/5 text-center">
+                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">FG% (Veld)</p>
+                <p className="text-xl sm:text-2xl font-mono font-black text-white mt-0.5">{calculatePercentage(aggregates.totalFgm, aggregates.totalFga)}</p>
+                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">{aggregates.totalFgm}/{aggregates.totalFga}</p>
+              </div>
+
+              <div className="bg-dark/60 p-3 rounded-2xl border border-white/5 text-center">
+                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">3P% (Driepunter)</p>
+                <p className="text-xl sm:text-2xl font-mono font-black text-white mt-0.5">{calculatePercentage(aggregates.total3Fgm, aggregates.total3Fga)}</p>
+                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">{aggregates.total3Fgm}/{aggregates.total3Fga}</p>
+              </div>
+
+              <div className="bg-dark/60 p-3 rounded-2xl border border-white/5 text-center">
+                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">FT% (Vrije Worp)</p>
+                <p className="text-xl sm:text-2xl font-mono font-black text-white mt-0.5">{calculatePercentage(aggregates.totalFtm, aggregates.totalFta)}</p>
+                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">{aggregates.totalFtm}/{aggregates.totalFta}</p>
+              </div>
+
+              <div className="bg-dark/60 p-3 rounded-2xl border border-white/5 text-center">
+                <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">Plus / Minus (+/-)</p>
+                <p className={`text-xl sm:text-2xl font-mono font-black mt-0.5 ${
+                  aggregates.totalPlusMinus > 0 ? 'text-green-400' : aggregates.totalPlusMinus < 0 ? 'text-red-400' : 'text-white'
+                }`}>
+                  {aggregates.totalPlusMinus > 0 ? `+${aggregates.totalPlusMinus}` : aggregates.totalPlusMinus}
+                </p>
+                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">gem. {aggregates.avgPlusMinus}</p>
               </div>
             </div>
 
-            {/* Assists Card */}
-            <div className="bg-dark/50 p-3 sm:p-4 rounded-2xl border border-white/5 space-y-1">
-              <div className="flex items-center justify-between text-text-muted">
-                <span className="text-[10px] uppercase font-bold tracking-wider">Assists (APG)</span>
-                <BarChart2 size={14} className="text-cyan-400" />
+            {/* Secondary KPIs */}
+            <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-6 gap-2">
+              <div className="bg-dark/40 px-3 py-2 rounded-xl border border-white/5 flex items-center justify-between">
+                <span className="text-[10px] text-text-muted uppercase font-bold">REB Gem.</span>
+                <span className="font-mono text-xs sm:text-sm font-bold text-white">{aggregates.rpg} ({aggregates.totalReb})</span>
               </div>
-              <div className="text-xl sm:text-2xl font-mono font-black text-white">
-                {totals.matches > 0 ? (totals.assists / totals.matches).toFixed(1) : '0.0'}
+              <div className="bg-dark/40 px-3 py-2 rounded-xl border border-white/5 flex items-center justify-between">
+                <span className="text-[10px] text-text-muted uppercase font-bold">AST Gem.</span>
+                <span className="font-mono text-xs sm:text-sm font-bold text-white">{aggregates.apg} ({aggregates.totalAst})</span>
               </div>
-              <div className="text-[10px] text-text-muted">
-                {totals.assists} totaal
+              <div className="bg-dark/40 px-3 py-2 rounded-xl border border-white/5 flex items-center justify-between">
+                <span className="text-[10px] text-text-muted uppercase font-bold">STL Gem.</span>
+                <span className="font-mono text-xs sm:text-sm font-bold text-white">{aggregates.spg} ({aggregates.totalStl})</span>
               </div>
-            </div>
-
-            {/* Steals & Blocks Card */}
-            <div className="bg-dark/50 p-3 sm:p-4 rounded-2xl border border-white/5 space-y-1">
-              <div className="flex items-center justify-between text-text-muted">
-                <span className="text-[10px] uppercase font-bold tracking-wider">Steals & Blocks</span>
-                <Shield size={14} className="text-purple-400" />
+              <div className="bg-dark/40 px-3 py-2 rounded-xl border border-white/5 flex items-center justify-between">
+                <span className="text-[10px] text-text-muted uppercase font-bold">BLK Gem.</span>
+                <span className="font-mono text-xs sm:text-sm font-bold text-white">{aggregates.bpg} ({aggregates.totalBlk})</span>
               </div>
-              <div className="text-xl sm:text-2xl font-mono font-black text-white">
-                {totals.matches > 0 ? (totals.steals / totals.matches).toFixed(1) : '0.0'} <span className="text-xs text-text-muted">STL</span>
+              <div className="bg-dark/40 px-3 py-2 rounded-xl border border-white/5 flex items-center justify-between">
+                <span className="text-[10px] text-text-muted uppercase font-bold">TO Gem.</span>
+                <span className="font-mono text-xs sm:text-sm font-bold text-white">{aggregates.tpg} ({aggregates.totalTo})</span>
               </div>
-              <div className="text-[10px] text-text-muted">
-                {totals.matches > 0 ? (totals.blocks / totals.matches).toFixed(1) : '0.0'} BLK avg
-              </div>
-            </div>
-
-            {/* Turnovers & Fouten Card */}
-            <div className="bg-dark/50 p-3 sm:p-4 rounded-2xl border border-white/5 space-y-1">
-              <div className="flex items-center justify-between text-text-muted">
-                <span className="text-[10px] uppercase font-bold tracking-wider">Fouten & TO</span>
-                <Award size={14} className="text-red-400" />
-              </div>
-              <div className="text-xl sm:text-2xl font-mono font-black text-red-400">
-                {totals.matches > 0 ? (totals.pf / totals.matches).toFixed(1) : '0.0'} <span className="text-xs text-text-muted">PF</span>
-              </div>
-              <div className="text-[10px] text-text-muted">
-                {totals.matches > 0 ? (totals.turnovers / totals.matches).toFixed(1) : '0.0'} TO avg
-              </div>
-            </div>
-
-            {/* Plus / Minus Card */}
-            <div className="bg-dark/50 p-3 sm:p-4 rounded-2xl border border-white/5 space-y-1">
-              <div className="flex items-center justify-between text-text-muted">
-                <span className="text-[10px] uppercase font-bold tracking-wider">Plus / Minus</span>
-                <Trophy size={14} className="text-emerald-400" />
-              </div>
-              <div className={`text-xl sm:text-2xl font-mono font-black ${
-                totals.plusMinus > 0 ? 'text-emerald-400' : totals.plusMinus < 0 ? 'text-red-400' : 'text-white'
-              }`}>
-                {totals.plusMinus > 0 ? `+${totals.plusMinus}` : totals.plusMinus}
-              </div>
-              <div className="text-[10px] text-text-muted">
-                {totals.matches > 0 ? ((totals.plusMinus / totals.matches) > 0 ? `+${(totals.plusMinus / totals.matches).toFixed(1)}` : (totals.plusMinus / totals.matches).toFixed(1)) : '0.0'} avg
-              </div>
-            </div>
-
-            {/* Starters status */}
-            <div className="bg-dark/50 p-3 sm:p-4 rounded-2xl border border-white/5 space-y-1">
-              <div className="flex items-center justify-between text-text-muted">
-                <span className="text-[10px] uppercase font-bold tracking-wider">Starts</span>
-                <Award size={14} className="text-amber-400" />
-              </div>
-              <div className="text-xl sm:text-2xl font-mono font-black text-white">
-                {totals.starterCount} / {totals.matches}
-              </div>
-              <div className="text-[10px] text-text-muted">
-                {totals.matches > 0 ? Math.round((totals.starterCount / totals.matches) * 100) : 0}% basisspeler
+              <div className="bg-dark/40 px-3 py-2 rounded-xl border border-white/5 flex items-center justify-between">
+                <span className="text-[10px] text-text-muted uppercase font-bold">PF Gem.</span>
+                <span className="font-mono text-xs sm:text-sm font-bold text-red-400">{aggregates.pfpg} ({aggregates.totalPf})</span>
               </div>
             </div>
           </div>
 
-          {/* WEDSTRIJDEN PER MATCH OVERZICHT */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Calendar size={18} className="text-primary" />
-                <h3 className="font-display font-black text-base sm:text-lg italic uppercase tracking-tight text-white">
-                  Wedstrijden Overzicht ({playerMatches.length})
-                </h3>
+          {/* Match by Match Details Table Section */}
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-lg sm:text-xl font-display font-black italic uppercase tracking-tighter text-white border-l-4 border-primary pl-3 flex items-center gap-2">
+                  <Activity size={18} className="text-primary" />
+                  Wedstrijden Detailoverzicht ({displayedMatches.length})
+                </h4>
+                <p className="text-[10px] text-text-muted uppercase font-bold tracking-wider pl-3 mt-0.5">
+                  Statistieken per wedstrijd voor #{player.number} {player.name}
+                </p>
               </div>
-              <span className="text-xs text-text-muted">
-                Gesorteerd op meest recent
-              </span>
+
+              {/* Search Opponent */}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Zoek tegenstander..."
+                    className="bg-dark border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-text-muted focus:outline-none focus:border-primary w-40 sm:w-48 transition-colors"
+                  />
+                </div>
+              </div>
             </div>
 
-            {playerMatches.length === 0 ? (
-              <div className="py-16 text-center text-text-muted bg-dark/30 rounded-2xl border border-dashed border-white/10 p-6">
-                <Calendar className="mx-auto mb-3 opacity-20" size={40} />
-                <p className="font-bold text-white text-sm uppercase tracking-wider mb-1">
-                  Geen gespeelde wedstrijden gevonden
-                </p>
-                <p className="text-xs text-text-muted max-w-md mx-auto">
-                  Deze speler heeft nog geen wedstrijdminuten geregistreerd in het geselecteerde seizoen ({selectedSeason}).
+            {displayedMatches.length === 0 ? (
+              <div className="py-12 text-center bg-white/2 rounded-2xl border border-dashed border-white/10 space-y-2">
+                <Users size={36} className="mx-auto text-text-muted opacity-30" />
+                <p className="text-sm font-bold text-white uppercase tracking-wider">Geen wedstrijden gevonden</p>
+                <p className="text-xs text-text-muted max-w-sm mx-auto">
+                  {playerMatches.length === 0 
+                    ? `Er zijn in ${selectedSeason === 'All' ? 'alle seizoenen' : selectedSeason} geen wedstrijden geregistreerd waarin ${player.name} heeft gespeeld.`
+                    : 'Er zijn geen wedstrijden die voldoen aan je zoekopdracht.'}
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-2xl border border-white/10 bg-dark/40 shadow-xl scrollbar-thin">
-                <table className="w-full text-left border-collapse min-w-[980px]">
-                  <thead>
-                    <tr className="bg-white/5 text-[10px] uppercase tracking-widest text-text-muted border-b border-white/5 font-bold italic">
-                      <th className="px-3.5 py-3">Datum & Wedstrijd</th>
-                      <th className="px-3 py-3 text-center">Uitslag</th>
-                      <th className="px-3 py-3 text-center">Rol</th>
-                      <th className="px-3 py-3">Speeltijd</th>
-                      <th className="px-3 py-3 text-primary font-black">PTN</th>
-                      <th className="px-3 py-3">FG (M/A)</th>
-                      <th className="px-3 py-3 text-primary font-bold">3P (M/A)</th>
-                      <th className="px-3 py-3 text-primary font-bold">FT (M/A)</th>
-                      <th className="px-3 py-3 text-right">REB</th>
-                      <th className="px-3 py-3 text-right">AST</th>
-                      <th className="px-3 py-3 text-right">STL</th>
-                      <th className="px-3 py-3 text-right">BLK</th>
-                      <th className="px-3 py-3 text-right">TO</th>
-                      <th className="px-3 py-3 text-right">PF</th>
-                      <th className="px-3 py-3 text-right">+/-</th>
-                      {onSelectMatch && <th className="px-3 py-3 text-center">Actie</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {playerMatches.map(({ match, stats, isStarter, isWin, isTie }) => {
-                      const st = stats.stats;
-                      const matchTeam = teams.find(t => t.id === match.teamId);
-
-                      return (
-                        <tr 
-                          key={match.matchId}
-                          className="border-b border-white/5 hover:bg-white/[0.04] transition-colors"
+              <div className="overflow-hidden rounded-2xl border border-white/10 shadow-xl bg-dark/40">
+                <div className="overflow-x-auto scrollbar-thin">
+                  <table className="w-full text-left border-collapse min-w-[950px]">
+                    <thead>
+                      <tr className="bg-white/5 text-[9px] sm:text-[10px] uppercase tracking-widest text-text-muted border-b border-white/5 font-bold italic select-none">
+                        <th 
+                          onClick={() => handleSort('date')}
+                          className="px-3 py-3 cursor-pointer hover:text-white transition-colors"
                         >
-                          {/* Datum & Tegenstander */}
-                          <td className="px-3.5 py-3.5">
-                            <div className="font-bold text-white text-xs sm:text-sm leading-tight">
-                              VS {match.opponent}
-                            </div>
-                            <div className="text-[10px] text-text-muted flex items-center gap-1.5 mt-0.5">
-                              <span>{formatDate(match.date).split(' om ')[0]}</span>
-                              {matchTeam && (
-                                <>
-                                  <span>•</span>
-                                  <span className="text-primary/90 font-medium">{matchTeam.name}</span>
-                                </>
-                              )}
-                            </div>
-                          </td>
+                          <div className="flex items-center gap-1">
+                            Datum <ArrowUpDown size={11} className={sortField === 'date' ? 'text-primary' : 'opacity-30'} />
+                          </div>
+                        </th>
+                        <th className="px-3 py-3">Tegenstander & Uitslag</th>
+                        <th className="px-3 py-3">Rol</th>
+                        <th 
+                          onClick={() => handleSort('totalTime')}
+                          className="px-3 py-3 cursor-pointer hover:text-white transition-colors"
+                        >
+                          <div className="flex items-center gap-1">
+                            Min <ArrowUpDown size={11} className={sortField === 'totalTime' ? 'text-primary' : 'opacity-30'} />
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => handleSort('points')}
+                          className="px-3 py-3 cursor-pointer hover:text-white transition-colors text-primary font-black"
+                        >
+                          <div className="flex items-center gap-1">
+                            PTN <ArrowUpDown size={11} className={sortField === 'points' ? 'text-primary' : 'opacity-30'} />
+                          </div>
+                        </th>
+                        <th className="px-3 py-3">FG (M/A)</th>
+                        <th className="px-3 py-3">3P (M/A)</th>
+                        <th className="px-3 py-3">FT (M/A)</th>
+                        <th 
+                          onClick={() => handleSort('rebounds')}
+                          className="px-3 py-3 cursor-pointer hover:text-white transition-colors text-right"
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            REB <ArrowUpDown size={11} className={sortField === 'rebounds' ? 'text-primary' : 'opacity-30'} />
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => handleSort('assists')}
+                          className="px-3 py-3 cursor-pointer hover:text-white transition-colors text-right"
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            AST <ArrowUpDown size={11} className={sortField === 'assists' ? 'text-primary' : 'opacity-30'} />
+                          </div>
+                        </th>
+                        <th className="px-3 py-3 text-right">STL</th>
+                        <th className="px-3 py-3 text-right">BLK</th>
+                        <th className="px-3 py-3 text-right">TO</th>
+                        <th className="px-3 py-3 text-right">PF</th>
+                        <th 
+                          onClick={() => handleSort('plusMinus')}
+                          className="px-3 py-3 cursor-pointer hover:text-white transition-colors text-right font-display font-black"
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            +/- <ArrowUpDown size={11} className={sortField === 'plusMinus' ? 'text-primary' : 'opacity-30'} />
+                          </div>
+                        </th>
+                        <th className="px-3 py-3 text-center">Match</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedMatches.map(({ match, playerStats, isStarter, isWin, isLoss }) => {
+                        const st = playerStats.stats;
+                        const hasScore = match.teamScore !== undefined && match.opponentScore !== undefined;
+                        const pmVal = st.plusMinus || 0;
 
-                          {/* Uitslag W/L */}
-                          <td className="px-3 py-3.5 text-center">
-                            <div className="flex flex-col items-center justify-center">
-                              <span className={`px-2 py-0.5 rounded-md font-mono font-black text-[11px] uppercase ${
-                                isWin 
-                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                                  : isTie 
-                                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' 
-                                    : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                        return (
+                          <tr 
+                            key={match.matchId} 
+                            className="border-b border-white/5 hover:bg-white/5 transition-colors group"
+                          >
+                            {/* Datum */}
+                            <td className="px-3 py-3 whitespace-nowrap text-xs text-text-muted font-medium">
+                              {formatDate(match.date).split(' om ')[0]}
+                            </td>
+
+                            {/* Tegenstander & Score */}
+                            <td className="px-3 py-3 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-white text-xs sm:text-sm">
+                                  vs {match.opponent}
+                                </span>
+                                {hasScore && (
+                                  <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                                    isWin 
+                                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25' 
+                                      : isLoss 
+                                        ? 'bg-red-500/15 text-red-400 border border-red-500/25' 
+                                        : 'bg-white/10 text-white'
+                                  }`}>
+                                    {isWin ? 'W' : isLoss ? 'V' : 'G'} {match.teamScore}-{match.opponentScore}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Rol */}
+                            <td className="px-3 py-3 whitespace-nowrap">
+                              <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                isStarter 
+                                  ? 'bg-primary/20 text-primary border border-primary/30' 
+                                  : 'bg-white/5 text-text-muted'
                               }`}>
-                                {isWin ? 'W' : isTie ? 'T' : 'L'} {match.teamScore ?? 0}-{match.opponentScore ?? 0}
+                                {isStarter ? 'Starter' : 'Bank'}
                               </span>
-                            </div>
-                          </td>
+                            </td>
 
-                          {/* Starter of Bank */}
-                          <td className="px-3 py-3.5 text-center">
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                              isStarter 
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' 
-                                : 'bg-white/5 text-text-muted'
+                            {/* Speeltijd */}
+                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs sm:text-sm font-semibold text-white">
+                              {formatTime(playerStats.totalTime || 0)}
+                            </td>
+
+                            {/* PTN */}
+                            <td className="px-3 py-3 whitespace-nowrap font-mono font-black text-primary text-xs sm:text-sm">
+                              {st.points || 0}
+                            </td>
+
+                            {/* FG */}
+                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs">
+                              <span className="text-white font-bold">{st.fgm || 0}/{st.fga || 0}</span>
+                              <span className="text-[10px] text-text-muted ml-1.5">({calculatePercentage(st.fgm || 0, st.fga || 0)})</span>
+                            </td>
+
+                            {/* 3P */}
+                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs">
+                              <span className="text-white font-bold">{st.threeFgm || 0}/{st.threeFga || 0}</span>
+                              <span className="text-[10px] text-text-muted ml-1.5">({calculatePercentage(st.threeFgm || 0, st.threeFga || 0)})</span>
+                            </td>
+
+                            {/* FT */}
+                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs">
+                              <span className="text-white font-bold">{st.ftm || 0}/{st.fta || 0}</span>
+                              <span className="text-[10px] text-text-muted ml-1.5">({calculatePercentage(st.ftm || 0, st.fta || 0)})</span>
+                            </td>
+
+                            {/* REB */}
+                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right">
+                              <span className="text-white font-bold">{st.rebounds || 0}</span>
+                              <span className="text-[9px] text-text-muted ml-1">({st.offReb || 0}o/{st.defReb || 0}d)</span>
+                            </td>
+
+                            {/* AST */}
+                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right font-bold text-white">
+                              {st.assists || 0}
+                            </td>
+
+                            {/* STL */}
+                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right text-text-muted">
+                              {st.steals || 0}
+                            </td>
+
+                            {/* BLK */}
+                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right text-text-muted">
+                              {st.blocks || 0}
+                            </td>
+
+                            {/* TO */}
+                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right text-text-muted">
+                              {st.turnovers || 0}
+                            </td>
+
+                            {/* PF */}
+                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right font-semibold text-red-400">
+                              {st.pf || 0}
+                            </td>
+
+                            {/* +/- */}
+                            <td className={`px-3 py-3 whitespace-nowrap font-mono text-xs text-right font-bold ${
+                              pmVal > 0 ? 'text-green-400' : pmVal < 0 ? 'text-red-400' : 'text-white'
                             }`}>
-                              {isStarter ? 'Starter' : 'Bank'}
-                            </span>
-                          </td>
+                              {pmVal > 0 ? `+${pmVal}` : pmVal}
+                            </td>
 
-                          {/* Speeltijd */}
-                          <td className="px-3 py-3.5 font-mono text-xs text-white">
-                            {formatTime(stats.totalTime)}
-                          </td>
-
-                          {/* Punten */}
-                          <td className="px-3 py-3.5 font-mono text-sm font-black text-primary">
-                            {st.points || 0}
-                          </td>
-
-                          {/* FG (Veldscore) */}
-                          <td className="px-3 py-3.5 font-mono text-xs">
-                            <span className="text-white font-bold">{st.fgm}/{st.fga}</span>
-                            <span className="text-[10px] text-text-muted ml-1.5 font-sans">
-                              ({calculatePercentage(st.fgm, st.fga)})
-                            </span>
-                          </td>
-
-                          {/* 3P (Driepunters) - Gemaakt / Genomen & Percentage */}
-                          <td className="px-3 py-3.5 font-mono text-xs">
-                            <span className="text-white font-bold">{st.threeFgm}/{st.threeFga}</span>
-                            <span className="text-[10px] text-primary/90 ml-1.5 font-sans font-semibold">
-                              ({calculatePercentage(st.threeFgm, st.threeFga)})
-                            </span>
-                          </td>
-
-                          {/* FT (Vrije Worpen) - Gemaakt / Genomen & Percentage */}
-                          <td className="px-3 py-3.5 font-mono text-xs">
-                            <span className="text-white font-bold">{st.ftm}/{st.fta}</span>
-                            <span className="text-[10px] text-primary/90 ml-1.5 font-sans font-semibold">
-                              ({calculatePercentage(st.ftm, st.fta)})
-                            </span>
-                          </td>
-
-                          {/* REB */}
-                          <td className="px-3 py-3.5 font-mono text-xs text-right">
-                            <span className="font-bold text-white">{st.rebounds || 0}</span>
-                            <span className="text-[9px] text-text-muted block">
-                              {st.defReb || 0}D / {st.offReb || 0}O
-                            </span>
-                          </td>
-
-                          {/* AST */}
-                          <td className="px-3 py-3.5 font-mono text-xs text-right font-bold text-white">
-                            {st.assists || 0}
-                          </td>
-
-                          {/* STL */}
-                          <td className="px-3 py-3.5 font-mono text-xs text-right text-white/90">
-                            {st.steals || 0}
-                          </td>
-
-                          {/* BLK */}
-                          <td className="px-3 py-3.5 font-mono text-xs text-right text-white/90">
-                            {st.blocks || 0}
-                          </td>
-
-                          {/* TO */}
-                          <td className="px-3 py-3.5 font-mono text-xs text-right text-text-muted">
-                            {st.turnovers || 0}
-                          </td>
-
-                          {/* PF */}
-                          <td className="px-3 py-3.5 font-mono text-xs text-right font-semibold text-red-400">
-                            {st.pf || 0}
-                          </td>
-
-                          {/* +/- */}
-                          <td className={`px-3 py-3.5 font-mono text-xs text-right font-black ${
-                            (st.plusMinus || 0) > 0 
-                              ? 'text-emerald-400' 
-                              : (st.plusMinus || 0) < 0 
-                                ? 'text-red-400' 
-                                : 'text-white'
-                          }`}>
-                            {(st.plusMinus || 0) > 0 ? `+${st.plusMinus}` : (st.plusMinus || 0)}
-                          </td>
-
-                          {/* Bekijk wedstrijd link */}
-                          {onSelectMatch && (
-                            <td className="px-3 py-3.5 text-center">
+                            {/* Bekijk Match Knop */}
+                            <td className="px-3 py-3 whitespace-nowrap text-center">
                               <button
                                 onClick={() => {
-                                  onSelectMatch(match);
                                   onClose();
+                                  onOpenMatchDetail(match);
                                 }}
-                                className="p-1.5 rounded-lg bg-white/5 hover:bg-primary hover:text-white text-text-muted transition-all active:scale-95"
-                                title="Bekijk volledige wedstrijdstatistieken"
+                                className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-lg transition-all active:scale-95"
+                                title="Open volledige wedstrijdstatistieken"
                               >
-                                <ChevronRight size={16} />
+                                Match <ExternalLink size={11} />
                               </button>
                             </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
-        </div>
-
-        {/* FOOTER */}
-        <div className="p-4 border-t border-white/10 bg-dark/60 flex items-center justify-between shrink-0">
-          <div className="text-xs text-text-muted">
-            Tip: Klik op een andere speler in de selectiebalk om snel te schakelen.
-          </div>
-          <button
-            onClick={onClose}
-            className="px-5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold font-display uppercase tracking-wider transition-colors"
-          >
-            Sluiten
-          </button>
         </div>
       </motion.div>
     </div>

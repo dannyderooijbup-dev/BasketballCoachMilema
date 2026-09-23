@@ -34,7 +34,8 @@ import {
 } from 'lucide-react';
 import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, SEASONS, DEFAULT_SEASON, DEFAULT_MEMBERSHIP, UserMembership, UserRole } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
-import { exportMatchToPDF, exportSeasonStatsToPDF } from './pdfUtils';
+import { exportMatchToPDF, exportSeasonStatsToPDF, exportPlayerMatchLogToPDF } from './pdfUtils';
+import { PlayerMatchStatsModal } from './components/PlayerMatchStatsModal';
 import { User } from 'firebase/auth';
 import { 
   doc, 
@@ -285,6 +286,7 @@ export default function App() {
   const [seasonTabSeasonFilter, setSeasonTabSeasonFilter] = useState<string>('All');
   const [showMatchStartModal, setShowMatchStartModal] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<MatchHistoryEntry | null>(null);
+  const [selectedPlayerForStats, setSelectedPlayerForStats] = useState<{ id?: string; name: string; number: string; position?: string } | null>(null);
   const [detailSeason, setDetailSeason] = useState<string>('2026/2027');
 
   useEffect(() => {
@@ -1880,8 +1882,10 @@ export default function App() {
 
         if (!stats[p.name]) {
           stats[p.name] = {
+            id: p.id,
             name: p.name,
             number: p.number,
+            position: p.position || 'Speler',
             totalTime: 0,
             points: 0,
             assists: 0,
@@ -1899,6 +1903,9 @@ export default function App() {
             plusMinus: 0,
             matches: 0
           };
+        } else if (!stats[p.name].id && p.id) {
+          stats[p.name].id = p.id;
+          stats[p.name].position = p.position || stats[p.name].position;
         }
         const s = stats[p.name];
         s.totalTime += p.totalTime;
@@ -1929,8 +1936,10 @@ export default function App() {
       activeTeamPlayers.forEach(p => {
         if (!stats[p.name]) {
           stats[p.name] = {
+            id: p.id,
             name: p.name,
             number: p.number,
+            position: p.position || 'Speler',
             totalTime: 0,
             points: 0,
             assists: 0,
@@ -3147,6 +3156,13 @@ export default function App() {
               </div>
               <div className="flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                 <button 
+                  onClick={() => setSelectedPlayerForStats(player)}
+                  className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors active:scale-90"
+                  title="Bekijk wedstrijdstatistieken per wedstrijd"
+                >
+                  <Activity size={18} />
+                </button>
+                <button 
                   onClick={() => {
                     setEditingPlayer(player);
                     setNewPlayerName(player.name);
@@ -3215,6 +3231,14 @@ export default function App() {
             )}
           </div>
         </div>
+        <div className="flex items-center justify-between gap-3 bg-primary/10 border border-primary/20 text-white text-xs px-4 py-3 rounded-2xl">
+          <div className="flex items-center gap-2.5">
+            <Activity size={18} className="text-primary shrink-0" />
+            <span>
+              <strong className="text-primary font-bold">Details per speler bekijken:</strong> Klik op een speler in de tabel of op de &quot;Details&quot;-knop om alle wedstrijden, speelminuten en statistieken per wedstrijd te bekijken.
+            </span>
+          </div>
+        </div>
         <div className={`overflow-hidden rounded-2xl sm:rounded-3xl border shadow-2xl transition-colors ${getTeamBgColorClass(activeTeamId)}`}>
           <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full text-left border-collapse min-w-[900px]">
@@ -3236,15 +3260,21 @@ export default function App() {
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">TO</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">PF</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right font-display font-black text-primary">+/-</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-center">Wedstrijden</th>
                 </tr>
               </thead>
               <tbody>
                 {stats.map((s: any) => (
-                  <tr key={s.name} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                  <tr 
+                    key={s.name} 
+                    onClick={() => setSelectedPlayerForStats({ id: s.id, name: s.name, number: s.number, position: s.position })}
+                    className="border-b border-white/5 hover:bg-white/10 transition-colors cursor-pointer group"
+                    title={`Klik om alle wedstrijden van ${s.name} te bekijken`}
+                  >
                     <td className={`px-3 sm:px-4 py-3 sm:py-4 sticky left-0 sm:relative sm:bg-transparent z-10 transition-colors ${getTeamStickyBgColorClass(activeTeamId)}`}>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-primary">#{s.number}</span>
-                        <span className="font-medium text-xs sm:text-sm whitespace-nowrap">{s.name}</span>
+                        <span className="font-medium text-xs sm:text-sm whitespace-nowrap group-hover:text-primary transition-colors">{s.name}</span>
                       </div>
                     </td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{s.matches || 0}</td>
@@ -3263,6 +3293,18 @@ export default function App() {
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right font-semibold text-red-400">{s.matches > 0 ? (s.pf / s.matches).toFixed(1) : '0.0'}</td>
                     <td className={`px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right font-bold ${s.plusMinus > 0 ? 'text-green-400' : s.plusMinus < 0 ? 'text-red-400' : 'text-white'}`}>
                       {s.plusMinus > 0 ? `+${s.plusMinus}` : s.plusMinus}
+                    </td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 text-center whitespace-nowrap">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPlayerForStats({ id: s.id, name: s.name, number: s.number, position: s.position });
+                        }}
+                        className="inline-flex items-center gap-1 bg-primary/15 group-hover:bg-primary text-primary group-hover:text-white px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition-all shadow-sm active:scale-95"
+                        title={`Bekijk alle wedstrijden van ${s.name}`}
+                      >
+                        Details <ChevronRight size={11} />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -3317,13 +3359,14 @@ export default function App() {
                       <td className={`px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right font-bold ${totalPlusMinus > 0 ? 'text-green-400' : totalPlusMinus < 0 ? 'text-red-400' : 'text-white'}`}>
                         {totalPlusMinus > 0 ? `+${totalPlusMinus}` : totalPlusMinus}
                       </td>
+                      <td className="px-3 sm:px-4 py-4 text-center"></td>
                     </tr>
                   );
                 })()}
 
                 {stats.length === 0 && (
                   <tr>
-                    <td colSpan={16} className="py-20 text-center text-text-muted">Geen data beschikbaar</td>
+                    <td colSpan={17} className="py-20 text-center text-text-muted">Geen data beschikbaar</td>
                   </tr>
                 )}
               </tbody>
@@ -4150,7 +4193,26 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Sessie Logs removed */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] text-text-muted font-mono">
+                            <span><strong className="text-white">FG:</strong> {player.stats.fgm || 0}/{player.stats.fga || 0} ({calculatePercentage(player.stats.fgm || 0, player.stats.fga || 0)})</span>
+                            <span className="hidden xs:inline">•</span>
+                            <span><strong className="text-white">3P:</strong> {player.stats.threeFgm || 0}/{player.stats.threeFga || 0} ({calculatePercentage(player.stats.threeFgm || 0, player.stats.threeFga || 0)})</span>
+                            <span className="hidden xs:inline">•</span>
+                            <span><strong className="text-white">FT:</strong> {player.stats.ftm || 0}/{player.stats.fta || 0} ({calculatePercentage(player.stats.ftm || 0, player.stats.fta || 0)})</span>
+                            <span className="hidden xs:inline">•</span>
+                            <span><strong className="text-white">REB:</strong> {player.stats.rebounds || 0} ({player.stats.offReb || 0}o / {player.stats.defReb || 0}d)</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setSelectedPlayerForStats({ id: player.id, name: player.name, number: player.number, position: player.position as string });
+                            }}
+                            className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase text-primary hover:text-white bg-primary/10 hover:bg-primary px-2.5 py-1 rounded-lg transition-all active:scale-95 shadow-sm"
+                            title={`Bekijk alle wedstrijden van ${player.name}`}
+                          >
+                            <Activity size={12} /> Alle wedstrijden ({player.name})
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -4158,6 +4220,23 @@ export default function App() {
               </div>
             </motion.div>
           </div>
+        )}
+
+        {selectedPlayerForStats && (
+          <PlayerMatchStatsModal
+            player={selectedPlayerForStats}
+            allPlayers={players}
+            history={history}
+            theme={theme}
+            activeTeamId={activeTeamId}
+            teams={teams}
+            onClose={() => setSelectedPlayerForStats(null)}
+            onSelectPlayer={(p) => setSelectedPlayerForStats(p)}
+            onOpenMatchDetail={(m) => {
+              setSelectedPlayerForStats(null);
+              setSelectedMatch(m);
+            }}
+          />
         )}
         {showEditPlayerModal && editingPlayer && (
           <div className="fixed inset-0 bg-dark/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">

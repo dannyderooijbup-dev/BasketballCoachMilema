@@ -47,6 +47,9 @@ export interface Player {
   sessions: Session[];
   stats: Stats;
   lastActions: PlayerAction[];
+  userId?: string;
+  clubId?: string | null;
+  createdAt?: number;
 }
 
 export interface MatchHistoryEntry {
@@ -132,6 +135,8 @@ export interface TeamPlayer {
   playerId: string;
   createdAt: number;
   role?: string;
+  userId?: string;
+  clubId?: string | null;
 }
 
 export type UserRole = 'admin' | 'user';

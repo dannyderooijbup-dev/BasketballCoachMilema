@@ -5,11 +5,13 @@ import {
   getDocs, 
   setDoc, 
   updateDoc, 
+  deleteDoc,
+  addDoc,
   query, 
   where 
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { ClubWorkspace, ClubMember, ClubMemberRole, ClubMemberStatus, Team } from '../types';
+import { ClubWorkspace, ClubMember, ClubMemberRole, ClubMemberStatus, Team, Player } from '../types';
 
 export enum OperationType {
   CREATE = 'create',
@@ -318,21 +320,60 @@ export async function getClubTeams(clubId: string): Promise<Team[]> {
 }
 
 /**
+ * Interne helper om Club Workspace audit logs vast te leggen.
+ */
+async function logClubAdminAction(payload: {
+  adminUid: string;
+  clubId: string;
+  memberUid: string;
+  action: 'club_member_role_updated' | 'club_member_status_updated' | 'club_member_removed';
+  oldValue: Record<string, any> | null;
+  newValue: Record<string, any> | null;
+}): Promise<void> {
+  try {
+    const auditLogRef = collection(db, 'audit_logs');
+    await addDoc(auditLogRef, {
+      timestamp: Date.now(),
+      adminUid: payload.adminUid,
+      targetUid: payload.memberUid,
+      clubId: payload.clubId,
+      memberUid: payload.memberUid,
+      action: payload.action,
+      oldValue: payload.oldValue,
+      newValue: payload.newValue,
+    });
+  } catch (err) {
+    console.warn('Kon auditlog niet wegschrijven:', err);
+  }
+}
+
+/**
  * Haalt de specifieke rol op van een gebruiker binnen een Club Workspace.
+ * - Eigenaar van de club is ALTIJD 'admin'.
+ * - Een actieve gebruiker in club_members krijgt zijn geconfigureerde rol ('admin', 'coach', 'assistant').
+ * - Een 'pending' clublid wordt NIET beschouwd als een actieve clubgebruiker (retourneert null).
  */
 export async function getClubMemberRole(clubId: string, userUid: string): Promise<ClubMemberRole | null> {
   if (!clubId || !userUid) return null;
 
   try {
-    const memberDocRef = doc(db, 'club_members', `${clubId}_${userUid}`);
-    const memberSnap = await getDoc(memberDocRef);
-    if (memberSnap.exists()) {
-      return (memberSnap.data().role as ClubMemberRole) || 'coach';
-    }
-
+    // 1. Controleer of de gebruiker eigenaar is van de club
     const clubSnap = await getDoc(doc(db, 'clubs', clubId));
     if (clubSnap.exists() && clubSnap.data().ownerUid === userUid) {
       return 'admin';
+    }
+
+    // 2. Controleer het club_members record
+    const memberDocRef = doc(db, 'club_members', `${clubId}_${userUid}`);
+    const memberSnap = await getDoc(memberDocRef);
+    if (memberSnap.exists()) {
+      const data = memberSnap.data();
+      // Alleen een actief lidmaatschap telt als geldige club-rol
+      if (data.status === 'active') {
+        return (data.role as ClubMemberRole) || 'coach';
+      }
+      // Pending leden hebben geen actieve club-toegang
+      return null;
     }
 
     return null;
@@ -341,4 +382,370 @@ export async function getClubMemberRole(clubId: string, userUid: string): Promis
     return null;
   }
 }
+
+/**
+ * Haalt het volledige club_member document op voor een specifieke gebruiker.
+ */
+export async function getClubMember(clubId: string, userUid: string): Promise<ClubMember | null> {
+  if (!clubId || !userUid) return null;
+
+  try {
+    const memberDocRef = doc(db, 'club_members', `${clubId}_${userUid}`);
+    const memberSnap = await getDoc(memberDocRef);
+    if (memberSnap.exists()) {
+      const data = memberSnap.data();
+      return {
+        id: memberSnap.id,
+        clubId: data.clubId,
+        userUid: data.userUid,
+        userName: data.userName || '',
+        userEmail: data.userEmail || '',
+        role: data.role || 'coach',
+        status: data.status || 'active',
+        joinedAt: data.joinedAt || Date.now(),
+      };
+    }
+
+    // Indien eigenaar zonder lidmaatschapsrecord, retourneer synthetisch admin record
+    const clubSnap = await getDoc(doc(db, 'clubs', clubId));
+    if (clubSnap.exists() && clubSnap.data().ownerUid === userUid) {
+      return {
+        id: `${clubId}_${userUid}`,
+        clubId,
+        userUid,
+        userName: auth.currentUser?.displayName || 'Clubbeheerder',
+        userEmail: auth.currentUser?.email || '',
+        role: 'admin',
+        status: 'active',
+        joinedAt: clubSnap.data().createdAt || Date.now(),
+      };
+    }
+
+    return null;
+  } catch (err) {
+    console.warn('Kon club_member niet ophalen:', err);
+    return null;
+  }
+}
+
+/**
+ * Controleert of de opgegeven gebruiker Club Admin is binnen de Club Workspace.
+ */
+export async function isClubAdmin(clubId: string, userUid: string): Promise<boolean> {
+  if (!clubId || !userUid) return false;
+  const role = await getClubMemberRole(clubId, userUid);
+  return role === 'admin';
+}
+
+/**
+ * Werkt de rol van een clublid bij (coach <-> assistant).
+ * Beveiligingsregels:
+ * - Alleen een Club Admin mag dit doen.
+ * - Eigenaar van de club kan niet gedegradeerd of gewijzigd worden.
+ * - De admin mag zichzelf niet degraderen.
+ * - Nieuwe rol moet 'coach' of 'assistant' zijn.
+ */
+export async function updateClubMemberRole(
+  clubId: string,
+  memberUid: string,
+  newRole: ClubMemberRole,
+  adminUid?: string
+): Promise<void> {
+  const currentAdmin = adminUid || auth.currentUser?.uid;
+  if (!currentAdmin) {
+    throw new Error('Je moet ingelogd zijn om leden te beheren.');
+  }
+
+  // 1. Controleer of uitvoerder admin is
+  const callerRole = await getClubMemberRole(clubId, currentAdmin);
+  if (callerRole !== 'admin') {
+    throw new Error('Alleen clubbeheerders mogen de rol van leden wijzigen.');
+  }
+
+  // 2. Controleer of doelgebruiker niet de eigenaar is
+  const clubSnap = await getDoc(doc(db, 'clubs', clubId));
+  if (!clubSnap.exists()) {
+    throw new Error('Club Workspace niet gevonden.');
+  }
+  const clubOwnerUid = clubSnap.data().ownerUid;
+  if (memberUid === clubOwnerUid) {
+    throw new Error('De rol van de cloubeigenaar kan niet worden gewijzigd.');
+  }
+
+  // 3. Admin mag zichzelf niet wijzigen
+  if (memberUid === currentAdmin) {
+    throw new Error('Je kunt je eigen beheerdersrol niet wijzigen.');
+  }
+
+  // 4. Toegestane rollen
+  if (newRole !== 'coach' && newRole !== 'assistant') {
+    throw new Error('Alleen de rollen Coach en Assistent kunnen worden toegewezen.');
+  }
+
+  // 5. Ophalen oude waarde voor audit log
+  const memberDocRef = doc(db, 'club_members', `${clubId}_${memberUid}`);
+  const memberSnap = await getDoc(memberDocRef);
+  if (!memberSnap.exists()) {
+    throw new Error('Clublid niet gevonden.');
+  }
+  const oldRole = memberSnap.data().role || 'coach';
+
+  // 6. Bijwerken in Firestore
+  try {
+    await updateDoc(memberDocRef, { role: newRole });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `club_members/${clubId}_${memberUid}`);
+  }
+
+  // 7. Audit log vastleggen
+  await logClubAdminAction({
+    adminUid: currentAdmin,
+    clubId,
+    memberUid,
+    action: 'club_member_role_updated',
+    oldValue: { role: oldRole },
+    newValue: { role: newRole },
+  });
+}
+
+/**
+ * Werkt de status van een clublid bij (active <-> pending).
+ * Beveiligingsregels:
+ * - Alleen een Club Admin mag dit doen.
+ * - Eigenaar van de club kan niet op pending worden gezet.
+ * - De admin mag zichzelf niet op pending zetten.
+ */
+export async function updateClubMemberStatus(
+  clubId: string,
+  memberUid: string,
+  newStatus: ClubMemberStatus,
+  adminUid?: string
+): Promise<void> {
+  const currentAdmin = adminUid || auth.currentUser?.uid;
+  if (!currentAdmin) {
+    throw new Error('Je moet ingelogd zijn om leden te beheren.');
+  }
+
+  // 1. Controleer of uitvoerder admin is
+  const callerRole = await getClubMemberRole(clubId, currentAdmin);
+  if (callerRole !== 'admin') {
+    throw new Error('Alleen clubbeheerders mogen de status van leden wijzigen.');
+  }
+
+  // 2. Controleer of doelgebruiker niet de eigenaar is
+  const clubSnap = await getDoc(doc(db, 'clubs', clubId));
+  if (!clubSnap.exists()) {
+    throw new Error('Club Workspace niet gevonden.');
+  }
+  const clubOwnerUid = clubSnap.data().ownerUid;
+  if (memberUid === clubOwnerUid) {
+    throw new Error('De status van de cloubeigenaar kan niet worden gewijzigd.');
+  }
+
+  // 3. Admin mag zichzelf niet wijzigen
+  if (memberUid === currentAdmin) {
+    throw new Error('Je kunt je eigen lidstatus niet wijzigen.');
+  }
+
+  if (newStatus !== 'active' && newStatus !== 'pending') {
+    throw new Error('Ongeldige status opgegeven.');
+  }
+
+  // 4. Ophalen oude waarde voor audit log
+  const memberDocRef = doc(db, 'club_members', `${clubId}_${memberUid}`);
+  const memberSnap = await getDoc(memberDocRef);
+  if (!memberSnap.exists()) {
+    throw new Error('Clublid niet gevonden.');
+  }
+  const oldStatus = memberSnap.data().status || 'active';
+
+  // 5. Bijwerken in Firestore
+  try {
+    await updateDoc(memberDocRef, { status: newStatus });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `club_members/${clubId}_${memberUid}`);
+  }
+
+  // 6. Audit log vastleggen
+  await logClubAdminAction({
+    adminUid: currentAdmin,
+    clubId,
+    memberUid,
+    action: 'club_member_status_updated',
+    oldValue: { status: oldStatus },
+    newValue: { status: newStatus },
+  });
+}
+
+/**
+ * Verwijdert een clublid uit de Club Workspace.
+ * Beveiligingsregels:
+ * - Alleen een Club Admin mag dit doen.
+ * - Eigenaar van de club kan niet worden verwijderd.
+ * - Admin kan zichzelf niet verwijderen.
+ */
+export async function removeClubMember(
+  clubId: string,
+  memberUid: string,
+  adminUid?: string
+): Promise<void> {
+  const currentAdmin = adminUid || auth.currentUser?.uid;
+  if (!currentAdmin) {
+    throw new Error('Je moet ingelogd zijn om leden te beheren.');
+  }
+
+  // 1. Controleer of uitvoerder admin is
+  const callerRole = await getClubMemberRole(clubId, currentAdmin);
+  if (callerRole !== 'admin') {
+    throw new Error('Alleen clubbeheerders mogen leden verwijderen.');
+  }
+
+  // 2. Controleer of doelgebruiker niet de eigenaar is
+  const clubSnap = await getDoc(doc(db, 'clubs', clubId));
+  if (!clubSnap.exists()) {
+    throw new Error('Club Workspace niet gevonden.');
+  }
+  const clubOwnerUid = clubSnap.data().ownerUid;
+  if (memberUid === clubOwnerUid) {
+    throw new Error('De eigenaar van de club kan niet worden verwijderd.');
+  }
+
+  // 3. Admin mag zichzelf niet verwijderen
+  if (memberUid === currentAdmin) {
+    throw new Error('Je kunt jezelf niet als beheerder verwijderen uit de Club Workspace.');
+  }
+
+  // 4. Ophalen bestaande gegevens voor audit log
+  const memberDocRef = doc(db, 'club_members', `${clubId}_${memberUid}`);
+  const memberSnap = await getDoc(memberDocRef);
+  if (!memberSnap.exists()) {
+    throw new Error('Clublid niet gevonden.');
+  }
+  const existingData = memberSnap.data();
+
+  // 5. Document verwijderen uit club_members
+  try {
+    await deleteDoc(memberDocRef);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `club_members/${clubId}_${memberUid}`);
+  }
+
+  // 6. Audit log vastleggen
+  await logClubAdminAction({
+    adminUid: currentAdmin,
+    clubId,
+    memberUid,
+    action: 'club_member_removed',
+    oldValue: {
+      role: existingData.role,
+      status: existingData.status,
+      joinedAt: existingData.joinedAt,
+      userEmail: existingData.userEmail || null,
+    },
+    newValue: null,
+  });
+}
+
+/**
+ * Koppelt een bestaand team aan een Club Workspace.
+ * Behoudt de oorspronkelijke userId en voegt clubId toe.
+ */
+export async function linkTeamToClub(
+  teamId: string,
+  clubId: string,
+  userUid?: string
+): Promise<void> {
+  if (!teamId || !clubId) return;
+  const currentUid = userUid || auth.currentUser?.uid;
+  if (!currentUid) throw new Error('Inloggen vereist.');
+
+  const teamRef = doc(db, 'teams', teamId);
+  try {
+    await updateDoc(teamRef, { clubId });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `teams/${teamId}`);
+  }
+}
+
+/**
+ * Ontkoppelt een team van een Club Workspace (maakt het weer een persoonlijk team).
+ */
+export async function unlinkTeamFromClub(
+  teamId: string,
+  userUid?: string
+): Promise<void> {
+  if (!teamId) return;
+  const currentUid = userUid || auth.currentUser?.uid;
+  if (!currentUid) throw new Error('Inloggen vereist.');
+
+  const teamRef = doc(db, 'teams', teamId);
+  try {
+    await updateDoc(teamRef, { clubId: null });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `teams/${teamId}`);
+  }
+}
+
+/**
+ * Koppelt een bestaande speler aan een Club Workspace.
+ * Behoudt de oorspronkelijke userId en voegt clubId toe.
+ */
+export async function linkPlayerToClub(
+  playerId: string,
+  clubId: string,
+  userUid?: string
+): Promise<void> {
+  if (!playerId || !clubId) return;
+  const currentUid = userUid || auth.currentUser?.uid;
+  if (!currentUid) throw new Error('Inloggen vereist.');
+
+  const playerRef = doc(db, 'players', playerId);
+  try {
+    await updateDoc(playerRef, { clubId });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `players/${playerId}`);
+  }
+}
+
+/**
+ * Ontkoppelt een speler van de Club Workspace (maakt het weer een persoonlijke speler).
+ */
+export async function unlinkPlayerFromClub(
+  playerId: string,
+  userUid?: string
+): Promise<void> {
+  if (!playerId) return;
+  const currentUid = userUid || auth.currentUser?.uid;
+  if (!currentUid) throw new Error('Inloggen vereist.');
+
+  const playerRef = doc(db, 'players', playerId);
+  try {
+    await updateDoc(playerRef, { clubId: null });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `players/${playerId}`);
+  }
+}
+
+/**
+ * Haalt alle spelers op die gekoppeld zijn aan de Club Workspace (clubId).
+ */
+export async function getClubPlayers(clubId: string): Promise<Player[]> {
+  if (!clubId) return [];
+
+  try {
+    const playersRef = collection(db, 'players');
+    const q = query(playersRef, where('clubId', '==', clubId));
+    const snap = await getDocs(q);
+
+    const players: Player[] = [];
+    snap.forEach((docSnap) => {
+      players.push({ id: docSnap.id, ...docSnap.data() } as Player);
+    });
+    return players;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, `players for club ${clubId}`);
+    return [];
+  }
+}
+
 

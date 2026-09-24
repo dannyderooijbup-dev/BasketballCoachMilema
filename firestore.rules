@@ -34,27 +34,42 @@ service cloud.firestore {
       );
     }
 
-    // Controleert of een gebruiker lid is van een club workspace
+    // Controleert of een gebruiker actief lid is van een club workspace (pending telt niet als actief lidmaatschap)
     function isClubMember(clubId) {
       return isSignedIn() && (
         (exists(/databases/$(database)/documents/clubs/$(clubId)) && get(/databases/$(database)/documents/clubs/$(clubId)).data.ownerUid == request.auth.uid) ||
-        exists(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid))
+        (exists(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid)) && 
+         get(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid)).data.status == 'active')
       );
     }
 
-    // Controleert of een gebruiker beheerder of coach is binnen een club workspace (beheerrechten voor club teams)
+    // Controleert of een gebruiker beheerder is binnen een club workspace (owner of role == 'admin' met active status)
+    function isClubAdmin(clubId) {
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/clubs/$(clubId)) && get(/databases/$(database)/documents/clubs/$(clubId)).data.ownerUid == request.auth.uid) ||
+        (exists(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid)) && 
+          get(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid)).data.status == 'active' &&
+          get(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    // Controleert of een gebruiker beheerder of coach is binnen een club workspace (beheerrechten voor club teams en spelers)
     function canManageClubTeams(clubId) {
       return isSignedIn() && (
         (exists(/databases/$(database)/documents/clubs/$(clubId)) && get(/databases/$(database)/documents/clubs/$(clubId)).data.ownerUid == request.auth.uid) ||
         (exists(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid)) && 
+          get(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid)).data.status == 'active' &&
           (get(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid)).data.role == 'admin' ||
            get(/databases/$(database)/documents/club_members/$(clubId + '_' + request.auth.uid)).data.role == 'coach'))
       );
     }
 
-    // Controleert of de ingelogde gebruiker de eigenaar is van de gekoppelde speler
+    // Controleert of de ingelogde gebruiker de eigenaar is van de gekoppelde speler of clublid van de gekoppelde club
     function isPlayerOwner(playerId) {
-      return isSignedIn() && getPlayer(playerId).userId == request.auth.uid;
+      return isSignedIn() && (
+        getPlayer(playerId).userId == request.auth.uid ||
+        ('clubId' in getPlayer(playerId) && getPlayer(playerId).clubId != null && isClubMember(getPlayer(playerId).clubId))
+      );
     }
 
     // Controleert of de ingelogde gebruiker beheerder is (role == 'admin')
@@ -153,9 +168,15 @@ service cloud.firestore {
       // Alleen ingelogde coaches mogen spelers aanmaken en zij moeten zichzelf als eigenaar registreren
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
+        && (
+          !('clubId' in request.resource.data) 
+          || request.resource.data.clubId == null 
+          || request.resource.data.clubId == '' 
+          || canManageClubTeams(request.resource.data.clubId)
+        )
         // Validatie van alle verplichte velden en hun datatypes
         && request.resource.data.keys().hasAll(['id', 'name', 'number', 'position', 'totalTime', 'isRunning', 'sessions', 'stats', 'lastActions', 'userId', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['id', 'name', 'number', 'position', 'totalTime', 'isRunning', 'lastStartTime', 'sessions', 'stats', 'lastActions', 'userId', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['id', 'name', 'number', 'position', 'totalTime', 'isRunning', 'lastStartTime', 'sessions', 'stats', 'lastActions', 'userId', 'createdAt', 'clubId'])
         && request.resource.data.id is string
         && request.resource.data.name is string 
         && request.resource.data.name.size() > 0 
@@ -171,21 +192,36 @@ service cloud.firestore {
         && request.resource.data.lastActions is list
         && request.resource.data.userId is string
         && (request.resource.data.createdAt is int || request.resource.data.createdAt is float)
-        && (!('lastStartTime' in request.resource.data) || request.resource.data.lastStartTime == null || request.resource.data.lastStartTime is int || request.resource.data.lastStartTime is float);
+        && (!('lastStartTime' in request.resource.data) || request.resource.data.lastStartTime == null || request.resource.data.lastStartTime is int || request.resource.data.lastStartTime is float)
+        && (!('clubId' in request.resource.data) || request.resource.data.clubId == null || request.resource.data.clubId is string);
 
-      // Alleen de eigenaar mag de speler lezen of verwijderen
-      allow read, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // Eigenaars, admins en actieve clubleden mogen de speler lezen
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        ('clubId' in resource.data && resource.data.clubId != null && isClubMember(resource.data.clubId))
+      );
 
-      // Alleen de eigenaar mag de speler wijzigen; diverse systeemvelden zijn onveranderbaar (immutable)
+      // Alleen de eigenaar, admin of clubbeheerder mag de speler verwijderen
+      allow delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        ('clubId' in resource.data && resource.data.clubId != null && isClubAdmin(resource.data.clubId))
+      );
+
+      // De eigenaar, admin of clubleden (voor clubspelers tijdens wedstrijden) mogen de speler wijzigen
       allow update: if isSignedIn()
-        && resource.data.userId == request.auth.uid
-        && request.resource.data.userId == request.auth.uid // userId mag niet gewijzigd worden
-        && resource.data.userId == request.resource.data.userId // eigenaar (userId) van document mag nooit gewijzigd worden
+        && (
+          resource.data.userId == request.auth.uid ||
+          isAdmin() ||
+          ('clubId' in resource.data && resource.data.clubId != null && isClubMember(resource.data.clubId))
+        )
+        && request.resource.data.userId == resource.data.userId // eigenaar (userId) mag nooit gewijzigd worden
         && resource.data.id == request.resource.data.id // document-ID (id) mag nooit gewijzigd worden
         && resource.data.createdAt == request.resource.data.createdAt // aanmaaktijdstip (createdAt) mag nooit gewijzigd worden
         // Validatie van alle gewijzigde velden en hun datatypes
         && request.resource.data.keys().hasAll(['id', 'name', 'number', 'position', 'totalTime', 'isRunning', 'sessions', 'stats', 'lastActions', 'userId', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['id', 'name', 'number', 'position', 'totalTime', 'isRunning', 'lastStartTime', 'sessions', 'stats', 'lastActions', 'userId', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['id', 'name', 'number', 'position', 'totalTime', 'isRunning', 'lastStartTime', 'sessions', 'stats', 'lastActions', 'userId', 'createdAt', 'clubId'])
         && request.resource.data.id is string
         && request.resource.data.name is string 
         && request.resource.data.name.size() > 0 
@@ -201,57 +237,56 @@ service cloud.firestore {
         && request.resource.data.lastActions is list
         && request.resource.data.userId is string
         && (request.resource.data.createdAt is int || request.resource.data.createdAt is float)
-        && (!('lastStartTime' in request.resource.data) || request.resource.data.lastStartTime == null || request.resource.data.lastStartTime is int || request.resource.data.lastStartTime is float);
+        && (!('lastStartTime' in request.resource.data) || request.resource.data.lastStartTime == null || request.resource.data.lastStartTime is int || request.resource.data.lastStartTime is float)
+        && (!('clubId' in request.resource.data) || request.resource.data.clubId == null || request.resource.data.clubId is string);
     }
 
     // ==========================================
     // TEAMPLAYERS (MAPPING) COLLECTIE
     // ==========================================
     match /teamPlayers/{docId} {
-      // Helper om te bepalen of de ingelogde gebruiker de eigenaar is van deze koppeling
-      // Fallback is ingebouwd om teams/spelers te checken als userId nog niet op de documenten aanwezig is (achterwaartse compatibiliteit)
+      // Helper om te bepalen of de ingelogde gebruiker toegang heeft tot deze koppeling
       function isMappingOwner() {
         return (resource.data.userId == request.auth.uid) || 
                isTeamOwner(resource.data.teamId) || 
-               isPlayerOwner(resource.data.playerId);
+               isPlayerOwner(resource.data.playerId) ||
+               ('clubId' in resource.data && resource.data.clubId != null && isClubMember(resource.data.clubId));
       }
 
-      // Alleen ingelogde gebruikers die eigenaar zijn van het gekoppelde team en de speler mogen koppelingen aanmaken
+      // Alleen ingelogde gebruikers die eigenaar zijn van het gekoppelde team/speler of clubleden mogen koppelingen aanmaken
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
-        && isTeamOwner(request.resource.data.teamId)
-        && isPlayerOwner(request.resource.data.playerId)
+        && (isTeamOwner(request.resource.data.teamId) || ('clubId' in request.resource.data && canManageClubTeams(request.resource.data.clubId)))
         // Validatie van de mapping velden en datatypes
         && request.resource.data.keys().hasAll(['id', 'teamId', 'playerId', 'createdAt', 'userId'])
-        && request.resource.data.keys().hasOnly(['id', 'teamId', 'playerId', 'createdAt', 'userId', 'role'])
+        && request.resource.data.keys().hasOnly(['id', 'teamId', 'playerId', 'createdAt', 'userId', 'role', 'clubId'])
         && request.resource.data.id is string
         && request.resource.data.teamId is string
         && request.resource.data.playerId is string
         && (request.resource.data.createdAt is int || request.resource.data.createdAt is float)
         && request.resource.data.userId is string
-        && (!('role' in request.resource.data) || request.resource.data.role is string && request.resource.data.role.size() <= 50);
+        && (!('role' in request.resource.data) || request.resource.data.role is string && request.resource.data.role.size() <= 50)
+        && (!('clubId' in request.resource.data) || request.resource.data.clubId == null || request.resource.data.clubId is string);
 
-      // Alleen de eigenaar mag de koppeling lezen of verwijderen
-      allow read, delete: if isSignedIn() && isMappingOwner();
+      // Alleen geautoriseerde coaches/clubleden mogen de koppeling lezen of verwijderen
+      allow read, delete: if isSignedIn() && (isMappingOwner() || isAdmin());
 
-      // Alleen de eigenaar mag de koppeling aanpassen; diverse velden zijn onveranderbaar en de relaties worden opnieuw gecontroleerd
+      // Alleen geautoriseerde coaches/clubleden mogen de koppeling aanpassen
       allow update: if isSignedIn()
-        && isMappingOwner()
-        && request.resource.data.userId == request.auth.uid // userId mag niet gewijzigd worden
-        && resource.data.userId == request.resource.data.userId // eigenaar (userId) van document mag nooit gewijzigd worden
+        && (isMappingOwner() || isAdmin())
+        && request.resource.data.userId == resource.data.userId // userId mag niet gewijzigd worden
         && resource.data.id == request.resource.data.id // document-ID (id) mag nooit gewijzigd worden
         && resource.data.createdAt == request.resource.data.createdAt // aanmaaktijdstip (createdAt) mag nooit gewijzigd worden
-        && isTeamOwner(request.resource.data.teamId) // Opnieuw verifiëren dat het nieuwe/bestaande teamId toebehoort aan de ingelogde coach
-        && isPlayerOwner(request.resource.data.playerId) // Opnieuw verifiëren dat het nieuwe/bestaande playerId toebehoort aan de ingelogde coach
         // Validatie van de nieuwe document data
         && request.resource.data.keys().hasAll(['id', 'teamId', 'playerId', 'createdAt', 'userId'])
-        && request.resource.data.keys().hasOnly(['id', 'teamId', 'playerId', 'createdAt', 'userId', 'role'])
+        && request.resource.data.keys().hasOnly(['id', 'teamId', 'playerId', 'createdAt', 'userId', 'role', 'clubId'])
         && request.resource.data.id is string
         && request.resource.data.teamId is string
         && request.resource.data.playerId is string
         && (request.resource.data.createdAt is int || request.resource.data.createdAt is float)
         && request.resource.data.userId is string
-        && (!('role' in request.resource.data) || request.resource.data.role is string && request.resource.data.role.size() <= 50);
+        && (!('role' in request.resource.data) || request.resource.data.role is string && request.resource.data.role.size() <= 50)
+        && (!('clubId' in request.resource.data) || request.resource.data.clubId == null || request.resource.data.clubId is string);
     }
 
     // ==========================================
@@ -267,8 +302,52 @@ service cloud.firestore {
     // CLUB MEMBERS COLLECTIE
     // ==========================================
     match /club_members/{docId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      // Actieve leden, beheerders of de gebruiker zelf mogen hun clublidmaatschap inzien
+      allow read: if isSignedIn() && (
+        resource.data.userUid == request.auth.uid ||
+        isClubMember(resource.data.clubId) ||
+        isAdmin()
+      );
+
+      // Aanmaken toegestaan door de club-eigenaar, club-admin, systeemadmin, of door de gebruiker zelf bij acceptatie van uitnodiging
+      allow create: if isSignedIn() && (
+        (exists(/databases/$(database)/documents/clubs/$(request.resource.data.clubId)) && 
+          get(/databases/$(database)/documents/clubs/$(request.resource.data.clubId)).data.ownerUid == request.auth.uid) ||
+        isClubAdmin(request.resource.data.clubId) ||
+        isAdmin() ||
+        (request.resource.data.userUid == request.auth.uid && request.resource.data.role != 'admin')
+      )
+      && request.resource.data.keys().hasAll(['clubId', 'userUid', 'role', 'status', 'joinedAt'])
+      && request.resource.data.role in ['admin', 'coach', 'assistant']
+      && request.resource.data.status in ['active', 'pending']
+      && (request.resource.data.joinedAt is int || request.resource.data.joinedAt is float);
+
+      // Wijzigen: Alleen club admins of systeem admins
+      // REGEL: Admin mag zichzelf niet wijzigen, club owner mag niet gewijzigd worden
+      allow update: if isSignedIn() && (
+        isClubAdmin(resource.data.clubId) || 
+        isAdmin()
+      )
+      // Eigenaar van de club kan niet worden gewijzigd/gedegradeerd
+      && resource.data.userUid != get(/databases/$(database)/documents/clubs/$(resource.data.clubId)).data.ownerUid
+      // Admin mag zichzelf niet wijzigen/degraderen
+      && resource.data.userUid != request.auth.uid
+      // Onveranderbare velden
+      && request.resource.data.clubId == resource.data.clubId
+      && request.resource.data.userUid == resource.data.userUid
+      && request.resource.data.joinedAt == resource.data.joinedAt
+      // Nieuwe rol moet coach of assistant zijn
+      && request.resource.data.role in ['coach', 'assistant']
+      && request.resource.data.status in ['active', 'pending'];
+
+      // Verwijderen: Alleen club admins of systeem admins
+      // REGEL: Admin mag zichzelf niet verwijderen, eigenaar kan niet verwijderd worden
+      allow delete: if isSignedIn() && (
+        isClubAdmin(resource.data.clubId) || 
+        isAdmin()
+      )
+      && resource.data.userUid != get(/databases/$(database)/documents/clubs/$(resource.data.clubId)).data.ownerUid
+      && resource.data.userUid != request.auth.uid;
     }
 
     // ==========================================

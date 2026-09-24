@@ -32,7 +32,7 @@ import {
   ShieldCheck,
   Building2
 } from 'lucide-react';
-import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, SEASONS, DEFAULT_SEASON, DEFAULT_MEMBERSHIP, UserMembership, UserRole } from './types';
+import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, SEASONS, DEFAULT_SEASON, DEFAULT_MEMBERSHIP, UserMembership, UserRole, ClubMemberRole, ClubWorkspace } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
 import { exportMatchToPDF, exportSeasonStatsToPDF, exportPlayerMatchLogToPDF } from './pdfUtils';
 import { PlayerMatchStatsModal } from './components/PlayerMatchStatsModal';
@@ -56,7 +56,14 @@ import AccountScreen from './components/AccountScreen';
 import AdminDashboard from './components/AdminDashboard';
 import ClubDashboard from './components/ClubDashboard';
 import ClubWelcomeModal from './components/ClubWelcomeModal';
-import { getClubForUser } from './services/clubService';
+import { 
+  getClubForUser, 
+  getClubMemberRole, 
+  linkTeamToClub, 
+  unlinkTeamFromClub, 
+  linkPlayerToClub, 
+  unlinkPlayerFromClub 
+} from './services/clubService';
 import { checkAndAcceptPendingInvites } from './services/clubInviteService';
 import { db } from './firebase';
 import { canCreateTeam, getMaxTeams, getUpgradeReason, UpgradeReason } from './services/permissionsService';
@@ -119,6 +126,8 @@ export default function App() {
   const [editingTeamName, setEditingTeamName] = useState<string>('');
   const [isSavingTeamName, setIsSavingTeamName] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string>('all');
+  const [currentClub, setCurrentClub] = useState<ClubWorkspace | null>(null);
+  const [currentClubRole, setCurrentClubRole] = useState<ClubMemberRole | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
 
   const getPlayersOfTeam = (teamId: string) => {
@@ -981,12 +990,22 @@ export default function App() {
 
         // 1. Fetch Teams (Coach: userId == currentUser.uid, Club: clubId == currentClub.id)
         let userClub = await getClubForUser(currentUser.uid);
+        let userClubRole: ClubMemberRole | null = null;
+        if (userClub) {
+          userClubRole = await getClubMemberRole(userClub.id, currentUser.uid);
+          setCurrentClub(userClub);
+          setCurrentClubRole(userClubRole);
+        } else {
+          setCurrentClub(null);
+          setCurrentClubRole(null);
+        }
+
         let loadedTeams: Team[] = [];
         const teamsMap = new Map<string, Team>();
         const currentMembership = data?.membership || membership || DEFAULT_MEMBERSHIP;
 
         // If user is part of an active Club Workspace, fetch club teams
-        if (userClub && (currentMembership?.type === 'club' || currentMembership?.status === 'active')) {
+        if (userClub && (userClubRole !== null || currentMembership?.type === 'club' || currentMembership?.status === 'active')) {
           try {
             const clubTeamsQuery = query(collection(db, 'teams'), where('clubId', '==', userClub.id));
             const clubTeamsSnap = await getDocs(clubTeamsQuery);
@@ -1014,13 +1033,36 @@ export default function App() {
         loadedTeams = Array.from(teamsMap.values());
         setTeams(loadedTeams);
 
-        // 2. Fetch Players
-        const playersQuery = query(collection(db, 'players'), where('userId', '==', currentUser.uid));
-        const playersSnap = await getDocs(playersQuery);
-        let loadedPlayers: Player[] = [];
-        playersSnap.forEach(pDoc => {
-          loadedPlayers.push({ id: pDoc.id, ...pDoc.data() } as Player);
-        });
+        // 2. Fetch Players (both personal and club players)
+        const playersMap = new Map<string, Player>();
+
+        // Always fetch personal players
+        try {
+          const playersQuery = query(collection(db, 'players'), where('userId', '==', currentUser.uid));
+          const playersSnap = await getDocs(playersQuery);
+          playersSnap.forEach(pDoc => {
+            playersMap.set(pDoc.id, { id: pDoc.id, ...pDoc.data() } as Player);
+          });
+        } catch (e) {
+          console.warn("Fout bij ophalen persoonlijke spelers:", e);
+        }
+
+        // Fetch club players if user has an active club workspace
+        if (userClub && (userClubRole !== null || currentMembership?.type === 'club' || currentMembership?.status === 'active')) {
+          try {
+            const clubPlayersQuery = query(collection(db, 'players'), where('clubId', '==', userClub.id));
+            const clubPlayersSnap = await getDocs(clubPlayersQuery);
+            clubPlayersSnap.forEach(pDoc => {
+              if (!playersMap.has(pDoc.id)) {
+                playersMap.set(pDoc.id, { id: pDoc.id, ...pDoc.data() } as Player);
+              }
+            });
+          } catch (e) {
+            console.warn("Fout bij ophalen club spelers:", e);
+          }
+        }
+
+        let loadedPlayers: Player[] = Array.from(playersMap.values());
 
         // 3. Fetch teamPlayers mappings
         let loadedMappings: TeamPlayer[] = [];
@@ -1398,6 +1440,15 @@ export default function App() {
       }
     }
 
+    // Determine if player should be a club player
+    let playerClubId: string | null = null;
+    const targetTeams = teams.filter(t => targetTeamIds.includes(t.id));
+    if (targetTeams.some(t => t.clubId)) {
+      playerClubId = targetTeams.find(t => t.clubId)?.clubId || null;
+    } else if (currentClub && (currentClubRole === 'admin' || currentClubRole === 'coach' || currentClub.ownerUid === currentUser.uid)) {
+      playerClubId = currentClub.id;
+    }
+
     const newPlayerId = generateId();
     const newPlayer: Player = {
       id: newPlayerId,
@@ -1409,7 +1460,10 @@ export default function App() {
       lastStartTime: null,
       sessions: [],
       stats: { ...INITIAL_STATS },
-      lastActions: []
+      lastActions: [],
+      userId: currentUser.uid,
+      clubId: playerClubId,
+      createdAt: Date.now()
     };
 
     try {
@@ -1420,6 +1474,7 @@ export default function App() {
       batch.set(playerDocRef, {
         ...newPlayer,
         userId: currentUser.uid,
+        clubId: playerClubId || null,
         createdAt: Date.now()
       });
 
@@ -1432,6 +1487,8 @@ export default function App() {
             id: mappingId,
             teamId: tId,
             playerId: newPlayerId,
+            userId: currentUser.uid,
+            clubId: playerClubId || null,
             createdAt: Date.now()
           };
           newMappings.push(newMapping);
@@ -1449,6 +1506,50 @@ export default function App() {
       }
     } catch (err) {
       console.error("Fout bij het toevoegen van speler via Firestore:", err);
+    }
+  };
+
+  const handleLinkTeamToClub = async (teamId: string) => {
+    if (!currentUser || !currentClub) return;
+    try {
+      await linkTeamToClub(teamId, currentClub.id, currentUser.uid);
+      setTeams(prev => prev.map(t => t.id === teamId ? { ...t, clubId: currentClub.id } : t));
+    } catch (e) {
+      console.error("Fout bij koppelen van team aan club:", e);
+      alert(e instanceof Error ? e.message : "Fout bij koppelen van team aan club.");
+    }
+  };
+
+  const handleUnlinkTeamFromClub = async (teamId: string) => {
+    if (!currentUser || !currentClub) return;
+    try {
+      await unlinkTeamFromClub(teamId, currentUser.uid);
+      setTeams(prev => prev.map(t => t.id === teamId ? { ...t, clubId: null } : t));
+    } catch (e) {
+      console.error("Fout bij ontkoppelen van team van club:", e);
+      alert(e instanceof Error ? e.message : "Fout bij ontkoppelen van team van club.");
+    }
+  };
+
+  const handleLinkPlayerToClub = async (playerId: string) => {
+    if (!currentUser || !currentClub) return;
+    try {
+      await linkPlayerToClub(playerId, currentClub.id, currentUser.uid);
+      setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, clubId: currentClub.id } : p));
+    } catch (e) {
+      console.error("Fout bij koppelen van speler aan club:", e);
+      alert(e instanceof Error ? e.message : "Fout bij koppelen van speler aan club.");
+    }
+  };
+
+  const handleUnlinkPlayerFromClub = async (playerId: string) => {
+    if (!currentUser || !currentClub) return;
+    try {
+      await unlinkPlayerFromClub(playerId, currentUser.uid);
+      setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, clubId: null } : p));
+    } catch (e) {
+      console.error("Fout bij ontkoppelen van speler van club:", e);
+      alert(e instanceof Error ? e.message : "Fout bij ontkoppelen van speler van club.");
     }
   };
 
@@ -1507,9 +1608,9 @@ export default function App() {
     }
 
     let activeClubId: string | null = null;
-    if (membership?.type === 'club' && membership?.status === 'active') {
+    if ((membership?.type === 'club' && membership?.status === 'active') || (currentClub && (currentClubRole === 'admin' || currentClubRole === 'coach'))) {
       try {
-        const userClub = await getClubForUser(currentUser.uid);
+        const userClub = currentClub || await getClubForUser(currentUser.uid);
         if (userClub) {
           activeClubId = userClub.id;
         }
@@ -2185,16 +2286,51 @@ export default function App() {
               >
                 <div>
                   <div className="flex justify-between items-center mb-4">
-                    <span className="text-[10px] text-text-muted uppercase font-bold tracking-[0.15em] font-mono">
-                      {isActive ? '● Actief Team' : 'Team'}
-                    </span>
-                    <button 
-                      onClick={() => deleteTeam(team.id)}
-                      className="text-red-400 hover:text-red-300 hover:bg-red-400/10 p-2 rounded-lg transition-all cursor-pointer"
-                      title="Team Verwijderen"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] text-text-muted uppercase font-bold tracking-[0.15em] font-mono">
+                        {isActive ? '● Actief Team' : 'Team'}
+                      </span>
+                      {team.clubId ? (
+                        <span className="inline-flex items-center gap-1 text-[9px] text-cyan-400 font-bold uppercase bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20">
+                          <Building2 size={10} /> Clubteam
+                        </span>
+                      ) : (
+                        <span className="text-[9px] text-text-muted font-bold uppercase bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+                          Persoonlijk
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {currentClub && (currentClubRole === 'admin' || currentClubRole === 'coach' || currentClub.ownerUid === currentUser?.uid) && (
+                        !team.clubId ? (
+                          <button
+                            onClick={() => handleLinkTeamToClub(team.id)}
+                            className="px-2 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-400 border border-cyan-500/25 text-[10px] font-bold uppercase flex items-center gap-1 transition-all cursor-pointer"
+                            title="Koppel team aan Club Workspace"
+                          >
+                            <Building2 size={11} />
+                            <span>Koppel Club</span>
+                          </button>
+                        ) : (currentClubRole === 'admin' || currentClub.ownerUid === currentUser?.uid) && (
+                          <button
+                            onClick={() => handleUnlinkTeamFromClub(team.id)}
+                            className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-text-muted hover:text-white border border-white/10 text-[10px] font-bold uppercase transition-all cursor-pointer"
+                            title="Ontkoppel van Club Workspace"
+                          >
+                            <span>Ontkoppel</span>
+                          </button>
+                        )
+                      )}
+
+                      <button 
+                        onClick={() => deleteTeam(team.id)}
+                        className="text-red-400 hover:text-red-300 hover:bg-red-400/10 p-2 rounded-lg transition-all cursor-pointer"
+                        title="Team Verwijderen"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
                   
                   {editingTeamId === team.id ? (
@@ -3151,10 +3287,40 @@ export default function App() {
                   }`} title={player.name || ''}>
                     {player.name || 'Speler'}
                   </h3>
-                  <p className="text-[10px] text-text-muted uppercase font-bold">{player.position}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-[10px] text-text-muted uppercase font-bold">{player.position}</p>
+                    {player.clubId ? (
+                      <span className="text-[9px] text-cyan-400 font-bold uppercase bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20 flex items-center gap-0.5">
+                        <Building2 size={10} /> Club
+                      </span>
+                    ) : (
+                      <span className="text-[9px] text-text-muted font-bold uppercase bg-white/5 px-1.5 py-0.5 rounded border border-white/5">
+                        Persoonlijk
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                {currentClub && (currentClubRole === 'admin' || currentClubRole === 'coach' || currentClub.ownerUid === currentUser?.uid) && (
+                  !player.clubId ? (
+                    <button 
+                      onClick={() => handleLinkPlayerToClub(player.id)}
+                      className="p-2 text-cyan-400 hover:bg-cyan-400/10 rounded-lg transition-colors active:scale-90"
+                      title="Koppel speler aan Club Workspace"
+                    >
+                      <Building2 size={18} />
+                    </button>
+                  ) : (currentClubRole === 'admin' || currentClub.ownerUid === currentUser?.uid) && (
+                    <button 
+                      onClick={() => handleUnlinkPlayerFromClub(player.id)}
+                      className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors active:scale-90"
+                      title="Ontkoppel speler van Club Workspace"
+                    >
+                      <Building2 size={18} />
+                    </button>
+                  )
+                )}
                 <button 
                   onClick={() => setSelectedPlayerForStats(player)}
                   className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors active:scale-90"
@@ -3572,7 +3738,7 @@ export default function App() {
           <TabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={18} />} label="Seizoen" />
           <TabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={18} />} label="Teams" />
           <TabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={18} />} label="Account" />
-          {(membership?.type === 'club' && membership?.status === 'active') && (
+          {((membership?.type === 'club' && membership?.status === 'active') || currentClubRole !== null || isAdmin()) && (
             <TabButton active={activeTab === 'club'} onClick={() => setActiveTab('club')} icon={<Building2 size={18} className="text-cyan-400" />} label="Club" />
           )}
           {isAdmin() && (
@@ -3765,7 +3931,7 @@ export default function App() {
         {activeTab === 'admin' && isAdmin() && (
           <AdminDashboard isAdmin={isAdmin()} currentUserId={currentUser?.uid} />
         )}
-        {activeTab === 'club' && (membership?.type === 'club' && membership?.status === 'active' || isAdmin()) && (
+        {activeTab === 'club' && ((membership?.type === 'club' && membership?.status === 'active') || currentClubRole !== null || isAdmin()) && (
           <ClubDashboard currentUserId={currentUser?.uid} membership={membership} />
         )}
       </main>
@@ -3777,7 +3943,7 @@ export default function App() {
         <MobileTabButton active={activeTab === 'season'} onClick={() => setActiveTab('season')} icon={<BarChart3 size={20} />} label="Stats" />
         <MobileTabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={<Shield size={20} />} label="Teams" />
         <MobileTabButton active={activeTab === 'account'} onClick={() => setActiveTab('account')} icon={<UserIcon size={20} />} label="Account" />
-        {(membership?.type === 'club' && membership?.status === 'active') && (
+        {((membership?.type === 'club' && membership?.status === 'active') || currentClubRole !== null || isAdmin()) && (
           <MobileTabButton active={activeTab === 'club'} onClick={() => setActiveTab('club')} icon={<Building2 size={20} className="text-cyan-400" />} label="Club" />
         )}
         {isAdmin() && (

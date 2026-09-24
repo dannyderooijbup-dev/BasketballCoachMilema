@@ -57,6 +57,7 @@
             "number": { "type": "string" },
             "position": { "type": "string" },
             "userId": { "type": "string" },
+            "clubId": { "type": "string" },
             "createdAt": { "type": "number" },
             "totalTime": { "type": "number" },
             "isRunning": { "type": "boolean" },
@@ -70,8 +71,11 @@
       "documents": {
         "{mappingId}": {
           "schema": {
+            "id": { "type": "string" },
             "teamId": { "type": "string" },
             "playerId": { "type": "string" },
+            "userId": { "type": "string" },
+            "clubId": { "type": "string" },
             "createdAt": { "type": "number" },
             "role": { "type": "string" }
           }

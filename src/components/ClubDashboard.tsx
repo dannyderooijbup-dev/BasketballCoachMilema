@@ -26,9 +26,9 @@ import {
   Trash2,
   ShieldAlert
 } from 'lucide-react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { ClubWorkspace, ClubMember, ClubMemberRole, ClubMemberStatus, UserMembership, Team, ClubInvite, InviteRole } from '../types';
+import { ClubWorkspace, ClubMember, ClubMemberRole, ClubMemberStatus, UserMembership, Team, ClubInvite, InviteRole, Player } from '../types';
 import { 
   getClubForUser, 
   getClubMembers, 
@@ -38,7 +38,8 @@ import {
   getClubMemberRole,
   updateClubMemberRole,
   updateClubMemberStatus,
-  removeClubMember
+  removeClubMember,
+  getClubPlayers
 } from '../services/clubService';
 import {
   createInvite,
@@ -51,12 +52,14 @@ interface ClubDashboardProps {
   membership?: UserMembership | null;
 }
 
-type TabType = 'leden' | 'uitnodigingen' | 'instellingen';
+type TabType = 'leden' | 'spelers' | 'uitnodigingen' | 'instellingen';
 
 export default function ClubDashboard({ currentUserId, membership }: ClubDashboardProps) {
   const [club, setClub] = useState<ClubWorkspace | null>(null);
   const [members, setMembers] = useState<ClubMember[]>([]);
   const [clubTeams, setClubTeams] = useState<Team[]>([]);
+  const [clubPlayers, setClubPlayers] = useState<Player[]>([]);
+  const [teamPlayerMappings, setTeamPlayerMappings] = useState<Array<{ teamId: string; playerId: string }>>([]);
   const [invites, setInvites] = useState<ClubInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('leden');
@@ -141,14 +144,38 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
           }
         }
 
-        const [clubMembersList, teamsList, role] = await Promise.all([
+        const [clubMembersList, teamsList, role, playersList] = await Promise.all([
           getClubMembers(userClub.id),
           getClubTeams(userClub.id),
-          getClubMemberRole(userClub.id, currentUserId)
+          getClubMemberRole(userClub.id, currentUserId),
+          getClubPlayers(userClub.id)
         ]);
         setMembers(clubMembersList);
         setClubTeams(teamsList);
         setUserClubRole(role);
+        setClubPlayers(playersList);
+
+        // Haal teamPlayers mappings op voor de clubteams om te tonen in welke teams spelers zitten
+        if (teamsList.length > 0) {
+          const tIds = teamsList.map(t => t.id);
+          const chunks: string[][] = [];
+          for (let i = 0; i < tIds.length; i += 10) {
+            chunks.push(tIds.slice(i, i + 10));
+          }
+          const snaps = await Promise.all(
+            chunks.map(c => getDocs(query(collection(db, 'teamPlayers'), where('teamId', 'in', c))))
+          );
+          const mappings: Array<{ teamId: string; playerId: string }> = [];
+          snaps.forEach(snap => {
+            snap.forEach(d => {
+              const data = d.data();
+              if (data.teamId && data.playerId) {
+                mappings.push({ teamId: data.teamId, playerId: data.playerId });
+              }
+            });
+          });
+          setTeamPlayerMappings(mappings);
+        }
       }
     } catch (err) {
       console.error("Fout bij laden van Club Workspace gegevens:", err);
@@ -540,7 +567,7 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
       </div>
 
       {/* Navigatie Tabs (2e menu) */}
-      <div className="w-full bg-surface/70 p-1 rounded-2xl border border-white/5 grid grid-cols-3 gap-1 sm:flex sm:bg-transparent sm:p-0 sm:border-0 sm:border-b sm:border-white/10 sm:pb-1 sm:rounded-none">
+      <div className="w-full bg-surface/70 p-1 rounded-2xl border border-white/5 grid grid-cols-2 sm:grid-cols-4 gap-1 sm:flex sm:bg-transparent sm:p-0 sm:border-0 sm:border-b sm:border-white/10 sm:pb-1 sm:rounded-none">
         <button
           onClick={() => setActiveTab('leden')}
           className={`py-2.5 px-2 sm:px-5 sm:py-3 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2.5 transition-all cursor-pointer ${
@@ -555,6 +582,23 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
             activeTab === 'leden' ? 'bg-white/20 text-white' : 'bg-white/10 text-text-muted'
           }`}>
             {members.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('spelers')}
+          className={`py-2.5 px-2 sm:px-5 sm:py-3 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 sm:gap-2.5 transition-all cursor-pointer ${
+            activeTab === 'spelers'
+              ? 'bg-primary text-white shadow-lg shadow-primary/20'
+              : 'text-text-muted hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <Users size={16} className="shrink-0 sm:w-[18px] sm:h-[18px]" />
+          <span className="truncate">Spelers</span>
+          <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-mono font-bold shrink-0 ${
+            activeTab === 'spelers' ? 'bg-white/20 text-white' : 'bg-white/10 text-text-muted'
+          }`}>
+            {clubPlayers.length}
           </span>
         </button>
 
@@ -738,6 +782,99 @@ export default function ClubDashboard({ currentUserId, membership }: ClubDashboa
                     <td colSpan={isAdmin ? 6 : 5} className="py-12 text-center text-text-muted">
                       <Users className="mx-auto mb-3 opacity-20" size={40} />
                       <p className="text-sm font-semibold">Nog geen leden aanwezig in deze club.</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: SPELERS */}
+      {activeTab === 'spelers' && (
+        <div className="bg-surface rounded-2xl sm:rounded-3xl p-4 sm:p-8 border border-white/10 shadow-xl space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+            <div>
+              <h2 className="text-xl font-display font-black italic uppercase tracking-tight text-white flex items-center gap-2">
+                <Users className="text-primary" size={20} />
+                <span>Club Spelers</span>
+              </h2>
+              <p className="text-xs text-text-muted">
+                Overzicht van alle spelers die via Club Teams aan deze Club Workspace zijn gekoppeld.
+              </p>
+            </div>
+            
+            <div className="text-xs font-mono font-bold text-text-muted bg-white/5 px-3 py-1.5 rounded-xl border border-white/5">
+              Totaal: {clubPlayers.length} {clubPlayers.length === 1 ? 'Speler' : 'Spelers'}
+            </div>
+          </div>
+
+          {/* Informatieve toelichting over automatische koppeling */}
+          <div className="bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 p-4 rounded-2xl text-xs flex items-center gap-3">
+            <Sparkles size={18} className="shrink-0 text-cyan-400" />
+            <span className="leading-relaxed">
+              Spelers worden automatisch toegevoegd wanneer ze aan een Club Team zijn gekoppeld.
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-white/10 text-[11px] uppercase font-bold text-text-muted tracking-wider">
+                  <th className="py-3 px-4">Speler</th>
+                  <th className="py-3 px-4">Rugnummer</th>
+                  <th className="py-3 px-4">Positie</th>
+                  <th className="py-3 px-4">Gekoppelde Club Teams</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {clubPlayers.map((player) => {
+                  const playerClubTeams = clubTeams.filter(t => 
+                    teamPlayerMappings.some(tp => tp.teamId === t.id && tp.playerId === player.id)
+                  );
+
+                  return (
+                    <tr key={player.id} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="py-4 px-4 font-semibold text-white flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-primary/20 text-primary border border-primary/30 flex items-center justify-center font-bold text-xs">
+                          {player.number ? `#${player.number}` : (player.name ? player.name[0].toUpperCase() : 'S')}
+                        </div>
+                        <span>{player.name}</span>
+                      </td>
+                      <td className="py-4 px-4 text-xs font-mono text-white/90">
+                        #{player.number}
+                      </td>
+                      <td className="py-4 px-4 text-xs text-text-muted uppercase font-bold">
+                        {player.position || 'Speler'}
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {playerClubTeams.map(t => (
+                            <span key={t.id} className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                              <Shield size={10} />
+                              <span>{t.name}</span>
+                            </span>
+                          ))}
+                          {playerClubTeams.length === 0 && (
+                            <span className="text-[11px] text-text-muted italic">
+                              Clubspeler
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {clubPlayers.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-12 text-center text-text-muted">
+                      <Users className="mx-auto mb-3 opacity-20" size={40} />
+                      <p className="text-sm font-semibold">Nog geen spelers aanwezig in deze club.</p>
+                      <p className="text-xs text-text-muted mt-1">
+                        Koppel spelers aan een Club Team om ze automatisch in de Club Workspace te zien.
+                      </p>
                     </td>
                   </tr>
                 )}

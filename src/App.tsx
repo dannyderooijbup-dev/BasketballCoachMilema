@@ -354,6 +354,19 @@ export default function App() {
   };
   const filteredPlayers = getFilteredPlayers();
 
+  const isPlayerInClub = (playerId: string, clubId?: string): boolean => {
+    if (!clubId) return false;
+    // Speler hoort automatisch bij de club indien gekoppeld aan een clubteam via teamPlayers
+    const playerTeamIds = teamPlayers
+      .filter(tp => tp.playerId === playerId)
+      .map(tp => tp.teamId);
+    const isInClubTeam = teams.some(t => t.clubId === clubId && playerTeamIds.includes(t.id));
+    if (isInClubTeam) return true;
+    // Backwards compatibility check op direct players.clubId
+    const p = players.find(x => x.id === playerId);
+    return p?.clubId === clubId;
+  };
+
   const getLivePeriodElapsedTime = () => {
     let elapsed = periodElapsed[currentPeriod] || 0;
     if (gameClockRunning && matchClockStartTime) {
@@ -1033,38 +1046,7 @@ export default function App() {
         loadedTeams = Array.from(teamsMap.values());
         setTeams(loadedTeams);
 
-        // 2. Fetch Players (both personal and club players)
-        const playersMap = new Map<string, Player>();
-
-        // Always fetch personal players
-        try {
-          const playersQuery = query(collection(db, 'players'), where('userId', '==', currentUser.uid));
-          const playersSnap = await getDocs(playersQuery);
-          playersSnap.forEach(pDoc => {
-            playersMap.set(pDoc.id, { id: pDoc.id, ...pDoc.data() } as Player);
-          });
-        } catch (e) {
-          console.warn("Fout bij ophalen persoonlijke spelers:", e);
-        }
-
-        // Fetch club players if user has an active club workspace
-        if (userClub && (userClubRole !== null || currentMembership?.type === 'club' || currentMembership?.status === 'active')) {
-          try {
-            const clubPlayersQuery = query(collection(db, 'players'), where('clubId', '==', userClub.id));
-            const clubPlayersSnap = await getDocs(clubPlayersQuery);
-            clubPlayersSnap.forEach(pDoc => {
-              if (!playersMap.has(pDoc.id)) {
-                playersMap.set(pDoc.id, { id: pDoc.id, ...pDoc.data() } as Player);
-              }
-            });
-          } catch (e) {
-            console.warn("Fout bij ophalen club spelers:", e);
-          }
-        }
-
-        let loadedPlayers: Player[] = Array.from(playersMap.values());
-
-        // 3. Fetch teamPlayers mappings
+        // 2. Fetch teamPlayers mappings for all loaded teams (personal + club teams)
         let loadedMappings: TeamPlayer[] = [];
         if (loadedTeams.length > 0) {
           const teamIds = loadedTeams.map(t => t.id);
@@ -1086,6 +1068,66 @@ export default function App() {
           });
         }
         setTeamPlayers(loadedMappings);
+
+        // 3. Fetch Players (personal players + players linked to Club Teams via teamPlayers + backwards compatibility)
+        const playersMap = new Map<string, Player>();
+
+        // Always fetch personal players
+        try {
+          const personalPlayersQuery = query(collection(db, 'players'), where('userId', '==', currentUser.uid));
+          const playersSnap = await getDocs(personalPlayersQuery);
+          playersSnap.forEach(pDoc => {
+            playersMap.set(pDoc.id, { id: pDoc.id, ...pDoc.data() } as Player);
+          });
+        } catch (e) {
+          console.warn("Fout bij ophalen persoonlijke spelers:", e);
+        }
+
+        // Backwards compatibility: fetch direct club players
+        if (userClub && (userClubRole !== null || currentMembership?.type === 'club' || currentMembership?.status === 'active')) {
+          try {
+            const clubPlayersQuery = query(collection(db, 'players'), where('clubId', '==', userClub.id));
+            const clubPlayersSnap = await getDocs(clubPlayersQuery);
+            clubPlayersSnap.forEach(pDoc => {
+              if (!playersMap.has(pDoc.id)) {
+                playersMap.set(pDoc.id, { id: pDoc.id, ...pDoc.data() } as Player);
+              }
+            });
+          } catch (e) {
+            console.warn("Fout bij ophalen club spelers:", e);
+          }
+        }
+
+        // Automatische Club-spelers: haal alle spelers op die via loadedMappings gekoppeld zijn aan Club Teams
+        if (userClub) {
+          const clubTeamIds = new Set(loadedTeams.filter(t => t.clubId === userClub.id).map(t => t.id));
+          const unmappedClubPlayerIds = Array.from(
+            new Set(loadedMappings.filter(tp => clubTeamIds.has(tp.teamId)).map(tp => tp.playerId))
+          ).filter(pId => !playersMap.has(pId));
+
+          if (unmappedClubPlayerIds.length > 0) {
+            const pChunks: string[][] = [];
+            for (let i = 0; i < unmappedClubPlayerIds.length; i += 10) {
+              pChunks.push(unmappedClubPlayerIds.slice(i, i + 10));
+            }
+            try {
+              const pQueries = pChunks.map(chunk =>
+                getDocs(query(collection(db, 'players'), where('__name__', 'in', chunk)))
+              );
+              const pSnaps = await Promise.all(pQueries);
+              pSnaps.forEach(snap => {
+                snap.forEach(pDoc => {
+                  playersMap.set(pDoc.id, { id: pDoc.id, ...pDoc.data() } as Player);
+                });
+              });
+            } catch (err) {
+              console.warn("Fout bij ophalen team-gekoppelde clubspelers:", err);
+            }
+          }
+        }
+
+        let loadedPlayers: Player[] = Array.from(playersMap.values());
+        setPlayers(loadedPlayers);
 
         // 4. Backward Compatibility / Migration Check
         if (loadedPlayers.length === 0 && data && Array.isArray(data.spelers) && data.spelers.length > 0) {
@@ -1514,6 +1556,9 @@ export default function App() {
     try {
       await linkTeamToClub(teamId, currentClub.id, currentUser.uid);
       setTeams(prev => prev.map(t => t.id === teamId ? { ...t, clubId: currentClub.id } : t));
+      setTeamPlayers(prev => prev.map(tp => tp.teamId === teamId ? { ...tp, clubId: currentClub.id } : tp));
+      const playerIdsInTeam = teamPlayers.filter(tp => tp.teamId === teamId).map(tp => tp.playerId);
+      setPlayers(prev => prev.map(p => playerIdsInTeam.includes(p.id) ? { ...p, clubId: currentClub.id } : p));
     } catch (e) {
       console.error("Fout bij koppelen van team aan club:", e);
       alert(e instanceof Error ? e.message : "Fout bij koppelen van team aan club.");
@@ -1525,6 +1570,20 @@ export default function App() {
     try {
       await unlinkTeamFromClub(teamId, currentUser.uid);
       setTeams(prev => prev.map(t => t.id === teamId ? { ...t, clubId: null } : t));
+      setTeamPlayers(prev => prev.map(tp => tp.teamId === teamId ? { ...tp, clubId: null } : tp));
+
+      const unlinkedPlayerIds = teamPlayers.filter(tp => tp.teamId === teamId).map(tp => tp.playerId);
+      const otherClubTeamIds = teams.filter(t => t.id !== teamId && t.clubId === currentClub.id).map(t => t.id);
+      const remainingClubPlayerIds = new Set(
+        teamPlayers.filter(tp => otherClubTeamIds.includes(tp.teamId)).map(tp => tp.playerId)
+      );
+
+      setPlayers(prev => prev.map(p => {
+        if (unlinkedPlayerIds.includes(p.id) && !remainingClubPlayerIds.has(p.id)) {
+          return { ...p, clubId: null };
+        }
+        return p;
+      }));
     } catch (e) {
       console.error("Fout bij ontkoppelen van team van club:", e);
       alert(e instanceof Error ? e.message : "Fout bij ontkoppelen van team van club.");
@@ -1564,6 +1623,21 @@ export default function App() {
         const mappingToDelete = teamPlayers.find(tp => tp.teamId === activeTeamId && tp.playerId === id);
         if (mappingToDelete) {
           batch.delete(doc(db, 'teamPlayers', mappingToDelete.id));
+
+          // Als activeTeamId een clubteam is, controleer of speler nog in een ander team van deze club zit
+          const activeTeam = teams.find(t => t.id === activeTeamId);
+          if (activeTeam?.clubId) {
+            const otherClubMappings = teamPlayers.filter(
+              tp => tp.id !== mappingToDelete.id &&
+                    tp.playerId === id &&
+                    teams.some(t => t.id === tp.teamId && t.clubId === activeTeam.clubId)
+            );
+            if (otherClubMappings.length === 0) {
+              batch.update(doc(db, 'players', id), { clubId: null });
+              setPlayers(prev => prev.map(pl => pl.id === id ? { ...pl, clubId: null } : pl));
+            }
+          }
+
           await batch.commit();
           setTeamPlayers(prev => prev.filter(tp => tp.id !== mappingToDelete.id));
         }
@@ -2420,7 +2494,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="space-y-1.5 mb-6 max-h-[140px] overflow-y-auto pr-1">
+                    <div className="space-y-1.5 mb-6 max-h-[140px] overflow-y-auto pr-1">
                     {teamRelatedPlayers.map(p => (
                       <div key={p.id} className="flex justify-between items-center text-xs bg-dark/40 py-1.5 px-2.5 rounded-lg border border-white/2">
                         <span className="text-white/90 truncate mr-3 font-medium">#{p.number} {p.name}</span>
@@ -2430,7 +2504,23 @@ export default function App() {
                               const mappingToDelete = teamPlayers.find(tp => tp.teamId === team.id && tp.playerId === p.id);
                               if (mappingToDelete) {
                                 try {
-                                  await deleteDoc(doc(db, 'teamPlayers', mappingToDelete.id));
+                                  const batch = writeBatch(db);
+                                  batch.delete(doc(db, 'teamPlayers', mappingToDelete.id));
+
+                                  // Als dit een clubteam is, controleer of speler nog in een ander team van deze club zit
+                                  if (team.clubId) {
+                                    const otherClubMappings = teamPlayers.filter(
+                                      tp => tp.id !== mappingToDelete.id &&
+                                            tp.playerId === p.id &&
+                                            teams.some(t => t.id === tp.teamId && t.clubId === team.clubId)
+                                    );
+                                    if (otherClubMappings.length === 0) {
+                                      batch.update(doc(db, 'players', p.id), { clubId: null });
+                                      setPlayers(prev => prev.map(pl => pl.id === p.id ? { ...pl, clubId: null } : pl));
+                                    }
+                                  }
+
+                                  await batch.commit();
                                   setTeamPlayers(prev => prev.filter(tp => tp.id !== mappingToDelete.id));
                                 } catch (e) {
                                   console.error("Loskoppelen mislukt:", e);
@@ -2462,22 +2552,32 @@ export default function App() {
                         className="w-full bg-dark text-white border border-white/10 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary placeholder:text-text-muted/50"
                       />
                       <select
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const pId = e.target.value;
-                          if (pId) {
+                          if (pId && currentUser) {
                             const mappingId = generateId();
                             const mapping: TeamPlayer = {
                               id: mappingId,
                               teamId: team.id,
                               playerId: pId,
-                              createdAt: Date.now()
+                              createdAt: Date.now(),
+                              userId: currentUser.uid,
+                              clubId: team.clubId || null
                             };
-                            setDoc(doc(db, 'teamPlayers', mappingId), mapping)
-                              .then(() => {
-                                setTeamPlayers(prev => [...prev, mapping]);
-                                setPlayerSearchQuery(prev => ({ ...prev, [team.id]: '' })); // Clear search after adding
-                              })
-                              .catch(err => console.error("Koppelen mislukt:", err));
+                            try {
+                              const batch = writeBatch(db);
+                              batch.set(doc(db, 'teamPlayers', mappingId), mapping);
+                              // Als het team gekoppeld is aan een club, werk dan ook speler.clubId bij
+                              if (team.clubId) {
+                                batch.update(doc(db, 'players', pId), { clubId: team.clubId });
+                                setPlayers(prev => prev.map(p => p.id === pId ? { ...p, clubId: team.clubId } : p));
+                              }
+                              await batch.commit();
+                              setTeamPlayers(prev => [...prev, mapping]);
+                              setPlayerSearchQuery(prev => ({ ...prev, [team.id]: '' }));
+                            } catch (err) {
+                              console.error("Koppelen mislukt:", err);
+                            }
                           }
                           e.target.value = '';
                         }}
@@ -3289,7 +3389,7 @@ export default function App() {
                   </h3>
                   <div className="flex items-center gap-2 mt-0.5">
                     <p className="text-[10px] text-text-muted uppercase font-bold">{player.position}</p>
-                    {player.clubId ? (
+                    {isPlayerInClub(player.id, currentClub?.id) ? (
                       <span className="text-[9px] text-cyan-400 font-bold uppercase bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20 flex items-center gap-0.5">
                         <Building2 size={10} /> Club
                       </span>
@@ -3302,25 +3402,6 @@ export default function App() {
                 </div>
               </div>
               <div className="flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                {currentClub && (currentClubRole === 'admin' || currentClubRole === 'coach' || currentClub.ownerUid === currentUser?.uid) && (
-                  !player.clubId ? (
-                    <button 
-                      onClick={() => handleLinkPlayerToClub(player.id)}
-                      className="p-2 text-cyan-400 hover:bg-cyan-400/10 rounded-lg transition-colors active:scale-90"
-                      title="Koppel speler aan Club Workspace"
-                    >
-                      <Building2 size={18} />
-                    </button>
-                  ) : (currentClubRole === 'admin' || currentClub.ownerUid === currentUser?.uid) && (
-                    <button 
-                      onClick={() => handleUnlinkPlayerFromClub(player.id)}
-                      className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors active:scale-90"
-                      title="Ontkoppel speler van Club Workspace"
-                    >
-                      <Building2 size={18} />
-                    </button>
-                  )
-                )}
                 <button 
                   onClick={() => setSelectedPlayerForStats(player)}
                   className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors active:scale-90"

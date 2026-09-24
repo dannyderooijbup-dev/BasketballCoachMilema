@@ -7,11 +7,12 @@ import {
   updateDoc, 
   deleteDoc,
   addDoc,
+  writeBatch,
   query, 
   where 
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { ClubWorkspace, ClubMember, ClubMemberRole, ClubMemberStatus, Team, Player } from '../types';
+import { ClubWorkspace, ClubMember, ClubMemberRole, ClubMemberStatus, Team, Player, TeamPlayer } from '../types';
 
 export enum OperationType {
   CREATE = 'create',
@@ -648,7 +649,10 @@ export async function removeClubMember(
 
 /**
  * Koppelt een bestaand team aan een Club Workspace.
- * Behoudt de oorspronkelijke userId en voegt clubId toe.
+ * - Zet team.clubId = clubId
+ * - Werkt automatisch de teamPlayers mappings van dit team bij met clubId
+ * - Zorgt dat de gekoppelde spelers ook worden gemarkeerd met clubId (voor Firestore Security Rules)
+ * - Behoudt altijd de oorspronkelijke userId en alle bestaande data
  */
 export async function linkTeamToClub(
   teamId: string,
@@ -659,9 +663,31 @@ export async function linkTeamToClub(
   const currentUid = userUid || auth.currentUser?.uid;
   if (!currentUid) throw new Error('Inloggen vereist.');
 
-  const teamRef = doc(db, 'teams', teamId);
   try {
-    await updateDoc(teamRef, { clubId });
+    const batch = writeBatch(db);
+    const teamRef = doc(db, 'teams', teamId);
+    batch.update(teamRef, { clubId });
+
+    // Haal alle teamPlayers mappings op voor dit specifieke team
+    const tpQuery = query(collection(db, 'teamPlayers'), where('teamId', '==', teamId));
+    const tpSnap = await getDocs(tpQuery);
+    const playerIds: string[] = [];
+
+    tpSnap.forEach((docSnap) => {
+      batch.update(docSnap.ref, { clubId });
+      const data = docSnap.data();
+      if (data.playerId) {
+        playerIds.push(data.playerId);
+      }
+    });
+
+    // Werk voor al deze spelers ook het clubId bij zodat Firestore Security Rules hen toelaten
+    for (const pId of playerIds) {
+      const pRef = doc(db, 'players', pId);
+      batch.update(pRef, { clubId });
+    }
+
+    await batch.commit();
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, `teams/${teamId}`);
   }
@@ -669,6 +695,10 @@ export async function linkTeamToClub(
 
 /**
  * Ontkoppelt een team van een Club Workspace (maakt het weer een persoonlijk team).
+ * - Zet team.clubId = null
+ * - Zet de teamPlayers van dit team op clubId = null
+ * - Voor spelers: controleert of zij nog in een ander team van deze club zitten; zo niet, clubId = null
+ * - Behoudt de spelers en alle data volledig intact (geen verwijdering!)
  */
 export async function unlinkTeamFromClub(
   teamId: string,
@@ -678,17 +708,63 @@ export async function unlinkTeamFromClub(
   const currentUid = userUid || auth.currentUser?.uid;
   if (!currentUid) throw new Error('Inloggen vereist.');
 
-  const teamRef = doc(db, 'teams', teamId);
   try {
-    await updateDoc(teamRef, { clubId: null });
+    const teamRef = doc(db, 'teams', teamId);
+    const teamSnap = await getDoc(teamRef);
+    const oldClubId = teamSnap.exists() ? teamSnap.data().clubId : null;
+
+    const batch = writeBatch(db);
+    batch.update(teamRef, { clubId: null });
+
+    // Haal de teamPlayers van dit team op
+    const tpQuery = query(collection(db, 'teamPlayers'), where('teamId', '==', teamId));
+    const tpSnap = await getDocs(tpQuery);
+    const playerIds: string[] = [];
+
+    tpSnap.forEach((docSnap) => {
+      batch.update(docSnap.ref, { clubId: null });
+      const data = docSnap.data();
+      if (data.playerId) {
+        playerIds.push(data.playerId);
+      }
+    });
+
+    // Controleer voor elke speler of die nog in een ander team van deze club zit
+    if (oldClubId && playerIds.length > 0) {
+      const otherClubTeamsSnap = await getDocs(
+        query(collection(db, 'teams'), where('clubId', '==', oldClubId))
+      );
+      const otherClubTeamIds = otherClubTeamsSnap.docs
+        .map(d => d.id)
+        .filter(id => id !== teamId);
+
+      for (const pId of playerIds) {
+        let inOtherClubTeam = false;
+        if (otherClubTeamIds.length > 0) {
+          const checkChunk = otherClubTeamIds.slice(0, 10);
+          const checkQuery = query(
+            collection(db, 'teamPlayers'),
+            where('playerId', '==', pId),
+            where('teamId', 'in', checkChunk)
+          );
+          const checkSnap = await getDocs(checkQuery);
+          inOtherClubTeam = !checkSnap.empty;
+        }
+
+        if (!inOtherClubTeam) {
+          batch.update(doc(db, 'players', pId), { clubId: null });
+        }
+      }
+    }
+
+    await batch.commit();
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, `teams/${teamId}`);
   }
 }
 
 /**
- * Koppelt een bestaande speler aan een Club Workspace.
- * Behoudt de oorspronkelijke userId en voegt clubId toe.
+ * Koppelt een bestaande speler aan een Club Workspace (behouden voor backwards compatibility).
  */
 export async function linkPlayerToClub(
   playerId: string,
@@ -708,7 +784,7 @@ export async function linkPlayerToClub(
 }
 
 /**
- * Ontkoppelt een speler van de Club Workspace (maakt het weer een persoonlijke speler).
+ * Ontkoppelt een speler van de Club Workspace (behouden voor backwards compatibility).
  */
 export async function unlinkPlayerFromClub(
   playerId: string,
@@ -727,21 +803,122 @@ export async function unlinkPlayerFromClub(
 }
 
 /**
- * Haalt alle spelers op die gekoppeld zijn aan de Club Workspace (clubId).
+ * Berekent de effectieve Club-spelers op basis van de Teams -> teamPlayers -> Players relaties.
+ * Dedupliceert automatisch op playerId wanneer een speler in meerdere teams van dezelfde club zit.
+ */
+export function getEffectiveClubPlayers(
+  clubId: string,
+  allTeams: Team[],
+  allTeamPlayers: TeamPlayer[],
+  allPlayers: Player[]
+): Player[] {
+  if (!clubId) return [];
+
+  // 1. Vind alle teams die horen bij deze club
+  const clubTeamIds = new Set(
+    allTeams.filter(t => t.clubId === clubId).map(t => t.id)
+  );
+
+  // 2. Vind alle teamPlayers die naar deze club-teams verwijzen
+  const clubPlayerIds = new Set<string>();
+  allTeamPlayers.forEach(tp => {
+    if (clubTeamIds.has(tp.teamId)) {
+      clubPlayerIds.add(tp.playerId);
+    }
+  });
+
+  // 3. Backwards compatibility: voeg ook spelers toe die eventueel direct players.clubId == clubId hebben
+  allPlayers.forEach(p => {
+    if (p.clubId === clubId) {
+      clubPlayerIds.add(p.id);
+    }
+  });
+
+  // 4. Bouw de unieke lijst van spelers op (dedupliceren op playerId)
+  const resultMap = new Map<string, Player>();
+  allPlayers.forEach(p => {
+    if (clubPlayerIds.has(p.id)) {
+      resultMap.set(p.id, p);
+    }
+  });
+
+  return Array.from(resultMap.values());
+}
+
+/**
+ * Haalt alle spelers op die via de Club Teams (Teams -> teamPlayers -> Players)
+ * bij de Club Workspace horen.
+ * Dedupliceert automatisch op playerId.
  */
 export async function getClubPlayers(clubId: string): Promise<Player[]> {
   if (!clubId) return [];
 
   try {
-    const playersRef = collection(db, 'players');
-    const q = query(playersRef, where('clubId', '==', clubId));
-    const snap = await getDocs(q);
+    // 1. Haal alle teams op van deze club
+    const teamsRef = collection(db, 'teams');
+    const qTeams = query(teamsRef, where('clubId', '==', clubId));
+    const teamsSnap = await getDocs(qTeams);
+    const clubTeams: Team[] = [];
+    teamsSnap.forEach(d => clubTeams.push({ id: d.id, ...d.data() } as Team));
 
-    const players: Player[] = [];
-    snap.forEach((docSnap) => {
-      players.push({ id: docSnap.id, ...docSnap.data() } as Player);
+    const clubTeamIds = clubTeams.map(t => t.id);
+    const playerIdsSet = new Set<string>();
+
+    // 2. Haal alle teamPlayers op die verwijzen naar deze club-teams
+    if (clubTeamIds.length > 0) {
+      const chunks: string[][] = [];
+      for (let i = 0; i < clubTeamIds.length; i += 10) {
+        chunks.push(clubTeamIds.slice(i, i + 10));
+      }
+      const tpQueries = chunks.map(chunk => 
+        getDocs(query(collection(db, 'teamPlayers'), where('teamId', 'in', chunk)))
+      );
+      const tpSnaps = await Promise.all(tpQueries);
+      tpSnaps.forEach(snap => {
+        snap.forEach(docSnap => {
+          const data = docSnap.data();
+          if (data.playerId) {
+            playerIdsSet.add(data.playerId);
+          }
+        });
+      });
+    }
+
+    // 3. Backwards compatibility: haal ook spelers op met direct clubId == clubId
+    try {
+      const directPlayersQuery = query(collection(db, 'players'), where('clubId', '==', clubId));
+      const directSnap = await getDocs(directPlayersQuery);
+      directSnap.forEach(docSnap => {
+        playerIdsSet.add(docSnap.id);
+      });
+    } catch (e) {
+      console.warn("Directe clubspelers ophalen overgeslagen:", e);
+    }
+
+    if (playerIdsSet.size === 0) {
+      return [];
+    }
+
+    // 4. Haal de bijbehorende spelersdocumenten op
+    const playerIds = Array.from(playerIdsSet);
+    const playerChunks: string[][] = [];
+    for (let i = 0; i < playerIds.length; i += 10) {
+      playerChunks.push(playerIds.slice(i, i + 10));
+    }
+
+    const playerQueries = playerChunks.map(chunk =>
+      getDocs(query(collection(db, 'players'), where('__name__', 'in', chunk)))
+    );
+    const playerSnaps = await Promise.all(playerQueries);
+    const playersMap = new Map<string, Player>();
+
+    playerSnaps.forEach(snap => {
+      snap.forEach(pDoc => {
+        playersMap.set(pDoc.id, { id: pDoc.id, ...pDoc.data() } as Player);
+      });
     });
-    return players;
+
+    return Array.from(playersMap.values());
   } catch (err) {
     handleFirestoreError(err, OperationType.GET, `players for club ${clubId}`);
     return [];

@@ -3231,6 +3231,65 @@ export default function App() {
             )}
           </div>
         </div>
+        {stats.length > 0 && (() => {
+          const total3Fgm = stats.reduce((sum, s: any) => sum + (s.threeFgm || 0), 0);
+          const total3Fga = stats.reduce((sum, s: any) => sum + (s.threeFga || 0), 0);
+          const totalFtm = stats.reduce((sum, s: any) => sum + (s.ftm || 0), 0);
+          const totalFta = stats.reduce((sum, s: any) => sum + (s.fta || 0), 0);
+          const totalFgm = stats.reduce((sum, s: any) => sum + (s.fgm || 0), 0);
+          const totalFga = stats.reduce((sum, s: any) => sum + (s.fga || 0), 0);
+          const totalMatchesCount = Math.max(...stats.map((s: any) => s.matches || 0), 0);
+
+          return (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-surface/60 border border-white/10 rounded-2xl p-3.5 backdrop-blur-sm shadow-sm">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">3-Punters (3P)</span>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="text-xl sm:text-2xl font-mono font-black text-primary">{calculatePercentage(total3Fgm, total3Fga)}</span>
+                  <span className="text-xs sm:text-sm font-mono font-bold text-white">{total3Fgm}/{total3Fga}</span>
+                </div>
+                <span className="text-[10px] text-text-muted mt-0.5 block">
+                  {total3Fgm} raak van {total3Fga} genomen {totalMatchesCount > 0 ? `(${(total3Fgm / totalMatchesCount).toFixed(1)}/w)` : ''}
+                </span>
+              </div>
+
+              <div className="bg-surface/60 border border-white/10 rounded-2xl p-3.5 backdrop-blur-sm shadow-sm">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">Vrije Worpen (FT)</span>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="text-xl sm:text-2xl font-mono font-black text-primary">{calculatePercentage(totalFtm, totalFta)}</span>
+                  <span className="text-xs sm:text-sm font-mono font-bold text-white">{totalFtm}/{totalFta}</span>
+                </div>
+                <span className="text-[10px] text-text-muted mt-0.5 block">
+                  {totalFtm} raak van {totalFta} genomen {totalMatchesCount > 0 ? `(${(totalFtm / totalMatchesCount).toFixed(1)}/w)` : ''}
+                </span>
+              </div>
+
+              <div className="bg-surface/60 border border-white/10 rounded-2xl p-3.5 backdrop-blur-sm shadow-sm">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">Veldscores (FG)</span>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="text-xl sm:text-2xl font-mono font-black text-white">{calculatePercentage(totalFgm, totalFga)}</span>
+                  <span className="text-xs sm:text-sm font-mono font-bold text-white/90">{totalFgm}/{totalFga}</span>
+                </div>
+                <span className="text-[10px] text-text-muted mt-0.5 block">
+                  {totalFgm} raak van {totalFga} genomen
+                </span>
+              </div>
+
+              <div className="bg-surface/60 border border-white/10 rounded-2xl p-3.5 backdrop-blur-sm shadow-sm">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">Schot Rendement</span>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="text-xl sm:text-2xl font-mono font-black text-amber-400">
+                    {totalFga > 0 ? (((totalFgm + 0.5 * total3Fgm) / totalFga) * 100).toFixed(1) + '%' : '0%'}
+                  </span>
+                  <span className="text-[10px] font-bold uppercase text-text-muted">eFG%</span>
+                </div>
+                <span className="text-[10px] text-text-muted mt-0.5 block">
+                  Effectief velddoelpunt percentage
+                </span>
+              </div>
+            </div>
+          );
+        })()}
         <div className="flex items-center justify-between gap-3 bg-primary/10 border border-primary/20 text-white text-xs px-4 py-3 rounded-2xl">
           <div className="flex items-center gap-2.5">
             <Activity size={18} className="text-primary shrink-0" />
@@ -3248,9 +3307,9 @@ export default function App() {
                   <th className="px-3 sm:px-4 py-3 sm:py-4">W</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">Tijd AVG</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4">PTN AVG</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4">FG%</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4">3P%</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4">FT%</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4" title="Veldscores: percentage en gemaakt / genomen">FG% (M/A)</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4" title="Driepunters: percentage en gemaakt / genomen">3P% (M/A)</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4" title="Vrije worpen: percentage en gemaakt / genomen">FT% (M/A)</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">REB</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">DEF REB</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">OFF REB</th>
@@ -3280,9 +3339,18 @@ export default function App() {
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{s.matches || 0}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{formatTime(s.matches > 0 ? s.totalTime / s.matches : 0)}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-bold text-primary text-xs sm:text-sm">{s.matches > 0 ? (s.points / s.matches).toFixed(1) : '0.0'}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.fgm, s.fga)}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.threeFgm, s.threeFga)}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(s.ftm, s.fta)}</td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Veldscores: ${s.fgm || 0} gemaakt van ${s.fga || 0} genomen (${calculatePercentage(s.fgm, s.fga)})`}>
+                      <span className="font-bold text-white">{calculatePercentage(s.fgm, s.fga)}</span>
+                      <span className="text-[10px] text-text-muted ml-1.5 font-normal">({s.fgm || 0}/{s.fga || 0})</span>
+                    </td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Driepunters: ${s.threeFgm || 0} gemaakt van ${s.threeFga || 0} genomen (${calculatePercentage(s.threeFgm, s.threeFga)})`}>
+                      <span className="font-bold text-white">{calculatePercentage(s.threeFgm, s.threeFga)}</span>
+                      <span className="text-[10px] text-text-muted ml-1.5 font-normal">({s.threeFgm || 0}/{s.threeFga || 0})</span>
+                    </td>
+                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Vrije worpen: ${s.ftm || 0} gemaakt van ${s.fta || 0} genomen (${calculatePercentage(s.ftm, s.fta)})`}>
+                      <span className="font-bold text-white">{calculatePercentage(s.ftm, s.fta)}</span>
+                      <span className="text-[10px] text-text-muted ml-1.5 font-normal">({s.ftm || 0}/{s.fta || 0})</span>
+                    </td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.rebounds / s.matches).toFixed(1) : '0.0'}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? ((s.defReb || 0) / s.matches).toFixed(1) : '0.0'}</td>
                     <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? ((s.offReb || 0) / s.matches).toFixed(1) : '0.0'}</td>
@@ -3345,9 +3413,18 @@ export default function App() {
                       <td className="px-3 sm:px-4 py-4 font-bold text-primary font-mono text-[11px] sm:text-sm">
                         {totalW > 0 ? (totalPoints / totalW).toFixed(1) : '0.0'}
                       </td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(totalFgm, totalFga)}</td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(total3Fgm, total3Fga)}</td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm">{calculatePercentage(totalFtm, totalFta)}</td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Team veldscores: ${totalFgm} gemaakt van ${totalFga} genomen`}>
+                        <span className="font-bold text-white">{calculatePercentage(totalFgm, totalFga)}</span>
+                        <span className="text-[10px] text-text-muted ml-1.5 font-normal">({totalFgm}/{totalFga})</span>
+                      </td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Team 3-punters: ${total3Fgm} gemaakt van ${total3Fga} genomen`}>
+                        <span className="font-bold text-white">{calculatePercentage(total3Fgm, total3Fga)}</span>
+                        <span className="text-[10px] text-text-muted ml-1.5 font-normal">({total3Fgm}/{total3Fga})</span>
+                      </td>
+                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Team vrije worpen: ${totalFtm} gemaakt van ${totalFta} genomen`}>
+                        <span className="font-bold text-white">{calculatePercentage(totalFtm, totalFta)}</span>
+                        <span className="text-[10px] text-text-muted ml-1.5 font-normal">({totalFtm}/{totalFta})</span>
+                      </td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalRebounds / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalDefReb / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
                       <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalOffReb / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>

@@ -425,19 +425,23 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
               <div className="bg-dark/60 p-3 rounded-2xl border border-white/5 text-center">
                 <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">FG% (Veld)</p>
                 <p className="text-xl sm:text-2xl font-mono font-black text-white mt-0.5">{calculatePercentage(aggregates.totalFgm, aggregates.totalFga)}</p>
-                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">{aggregates.totalFgm}/{aggregates.totalFga}</p>
+                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">{aggregates.totalFgm}/{aggregates.totalFga} raak</p>
               </div>
 
               <div className="bg-dark/60 p-3 rounded-2xl border border-white/5 text-center">
                 <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">3P% (Driepunter)</p>
                 <p className="text-xl sm:text-2xl font-mono font-black text-white mt-0.5">{calculatePercentage(aggregates.total3Fgm, aggregates.total3Fga)}</p>
-                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">{aggregates.total3Fgm}/{aggregates.total3Fga}</p>
+                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">
+                  {aggregates.total3Fgm}/{aggregates.total3Fga} raak {aggregates.totalMatches > 0 ? `(${(aggregates.total3Fgm / aggregates.totalMatches).toFixed(1)}/w)` : ''}
+                </p>
               </div>
 
               <div className="bg-dark/60 p-3 rounded-2xl border border-white/5 text-center">
                 <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">FT% (Vrije Worp)</p>
                 <p className="text-xl sm:text-2xl font-mono font-black text-white mt-0.5">{calculatePercentage(aggregates.totalFtm, aggregates.totalFta)}</p>
-                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">{aggregates.totalFtm}/{aggregates.totalFta}</p>
+                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">
+                  {aggregates.totalFtm}/{aggregates.totalFta} raak {aggregates.totalMatches > 0 ? `(${(aggregates.totalFtm / aggregates.totalMatches).toFixed(1)}/w)` : ''}
+                </p>
               </div>
 
               <div className="bg-dark/60 p-3 rounded-2xl border border-white/5 text-center">

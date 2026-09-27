@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import { 
   Timer, 
   Users, 
@@ -83,6 +83,7 @@ export default function App() {
   const [userRole, setUserRole] = useState<UserRole>('user');
   const [isCheckingMembership, setIsCheckingMembership] = useState(false);
   const hasSyncedFromFirestore = useRef(false);
+  const isRemoteSnapshotSync = useRef(false);
 
   // Central permissions helper: returns true if the user's Firestore role is 'admin'
   const isAdmin = () => userRole === 'admin';
@@ -825,7 +826,7 @@ export default function App() {
 
     const userDocRef = doc(db, 'users', currentUser.uid);
 
-    // Set up real-time listener for user document (real-time membership and role status updates)
+    // Set up real-time listener for user document (real-time membership, role, and live match synchronization across devices)
     const unsubscribeUser = onSnapshot(userDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const userData = docSnap.data();
@@ -838,6 +839,96 @@ export default function App() {
           setUserRole(userData.role as UserRole);
         } else {
           setUserRole('user');
+        }
+
+        // Live cross-device synchronization: keeps tablet and laptop 100% in sync during matches
+        if (userData.instellingen) {
+          const inst = userData.instellingen;
+          if (inst.isMatchActive !== undefined) {
+            setIsMatchActive(inst.isMatchActive);
+            localStorage.setItem('isMatchActive', JSON.stringify(inst.isMatchActive));
+          }
+          if (inst.opponent !== undefined) {
+            setOpponent(inst.opponent);
+            localStorage.setItem('opponent', inst.opponent);
+          }
+          if (inst.opponentScore !== undefined) {
+            setOpponentScore(inst.opponentScore);
+            localStorage.setItem('opponentScore', JSON.stringify(inst.opponentScore));
+          }
+          if (inst.gameClockRunning !== undefined) {
+            setGameClockRunning(inst.gameClockRunning);
+            localStorage.setItem('gameClockRunning', JSON.stringify(inst.gameClockRunning));
+          }
+          if (inst.currentPeriod !== undefined) {
+            setCurrentPeriod(inst.currentPeriod);
+            localStorage.setItem('currentPeriod', JSON.stringify(inst.currentPeriod));
+          }
+          if (inst.periodElapsed !== undefined) {
+            setPeriodElapsed(inst.periodElapsed);
+            localStorage.setItem('periodElapsed', JSON.stringify(inst.periodElapsed));
+          }
+          if (inst.matchClockStartTime !== undefined) {
+            setMatchClockStartTime(inst.matchClockStartTime);
+            localStorage.setItem('matchClockStartTime', JSON.stringify(inst.matchClockStartTime));
+          }
+          if (inst.matchTeamId !== undefined) {
+            setMatchTeamId(inst.matchTeamId);
+            localStorage.setItem('matchTeamId', inst.matchTeamId || '');
+            if (inst.matchTeamId && inst.isMatchActive) {
+              setActiveTeamId(inst.matchTeamId);
+              localStorage.setItem('activeTeamId', inst.matchTeamId);
+            }
+          }
+          if (inst.matchSeason !== undefined) {
+            setMatchSeason(inst.matchSeason);
+            localStorage.setItem('matchSeason', inst.matchSeason || '');
+          }
+          if (inst.matchInactivePlayerIds !== undefined && Array.isArray(inst.matchInactivePlayerIds)) {
+            setMatchInactivePlayerIds(inst.matchInactivePlayerIds);
+            localStorage.setItem('matchInactivePlayerIds', JSON.stringify(inst.matchInactivePlayerIds));
+          }
+          if (inst.globalActionsLog !== undefined && Array.isArray(inst.globalActionsLog)) {
+            setGlobalActionsLog(inst.globalActionsLog);
+            localStorage.setItem('globalActionsLog', JSON.stringify(inst.globalActionsLog));
+          }
+          if (inst.currentStarting5 !== undefined && Array.isArray(inst.currentStarting5)) {
+            setCurrentStarting5(inst.currentStarting5);
+            localStorage.setItem('currentStarting5', JSON.stringify(inst.currentStarting5));
+          }
+        }
+
+        // Live player active states (isRunning, timers, live stats) sync from Firestore
+        if (userData.spelers && Array.isArray(userData.spelers)) {
+          isRemoteSnapshotSync.current = true;
+          setPlayers(prev => {
+            const remotePlayers = userData.spelers;
+            let hasDifferences = false;
+            const updated = prev.map(p => {
+              const remoteP = remotePlayers.find((rp: any) => rp && rp.id === p.id);
+              if (!remoteP) return p;
+              const remoteRunning = remoteP.isRunning === true;
+              if (
+                p.isRunning !== remoteRunning ||
+                p.totalTime !== (remoteP.totalTime || 0) ||
+                p.lastStartTime !== (remoteP.lastStartTime || null) ||
+                JSON.stringify(p.stats) !== JSON.stringify(remoteP.stats)
+              ) {
+                hasDifferences = true;
+                return {
+                  ...p,
+                  stats: remoteP.stats ? { ...p.stats, ...remoteP.stats } : p.stats,
+                  totalTime: typeof remoteP.totalTime === 'number' ? remoteP.totalTime : p.totalTime,
+                  isRunning: remoteRunning,
+                  lastStartTime: typeof remoteP.lastStartTime === 'number' ? remoteP.lastStartTime : remoteP.lastStartTime === null ? null : p.lastStartTime,
+                  sessions: Array.isArray(remoteP.sessions) ? remoteP.sessions : p.sessions,
+                  lastActions: Array.isArray(remoteP.lastActions) ? remoteP.lastActions : p.lastActions
+                };
+              }
+              return p;
+            });
+            return hasDifferences ? updated : prev;
+          });
         }
       }
     }, (err) => {
@@ -942,6 +1033,10 @@ export default function App() {
             if (inst.matchTeamId !== undefined) {
               setMatchTeamId(inst.matchTeamId);
               localStorage.setItem('matchTeamId', inst.matchTeamId || '');
+              if (inst.isMatchActive && inst.matchTeamId) {
+                setActiveTeamId(inst.matchTeamId);
+                localStorage.setItem('activeTeamId', inst.matchTeamId);
+              }
             }
             if (inst.matchSeason !== undefined) {
               setMatchSeason(inst.matchSeason);
@@ -1195,7 +1290,27 @@ export default function App() {
           );
 
         if (activeMatch) {
-          if (hasLocalStats) {
+          const remoteHasActive = data?.spelers && Array.isArray(data.spelers) && data.spelers.some((sp: any) => sp && (sp.isRunning === true || (sp.stats && Object.values(sp.stats).some(v => typeof v === 'number' && v > 0))));
+          
+          if (remoteHasActive && data?.spelers) {
+            // When connecting across devices (e.g. tablet connecting to match started on laptop),
+            // Firestore data is the authoritative live truth.
+            finalPlayers = loadedPlayers.map(lp => {
+              const activePlayer = data.spelers.find((sp: any) => sp && sp.id === lp.id);
+              if (activePlayer) {
+                return {
+                  ...lp,
+                  stats: activePlayer.stats && typeof activePlayer.stats === 'object' ? activePlayer.stats : { ...INITIAL_STATS },
+                  totalTime: typeof activePlayer.totalTime === 'number' ? activePlayer.totalTime : 0,
+                  isRunning: activePlayer.isRunning === true,
+                  lastStartTime: typeof activePlayer.lastStartTime === 'number' ? activePlayer.lastStartTime : null,
+                  sessions: Array.isArray(activePlayer.sessions) ? activePlayer.sessions : [],
+                  lastActions: Array.isArray(activePlayer.lastActions) ? activePlayer.lastActions : []
+                };
+              }
+              return lp;
+            });
+          } else if (hasLocalStats) {
             console.log("Using local active players stats to prevent overwrite on refresh.");
             finalPlayers = loadedPlayers.map(lp => {
               const localPlayer = localPlayersForMatch.find((sp: any) => sp && sp.id === lp.id);
@@ -1314,10 +1429,17 @@ export default function App() {
     localStorage.setItem('globalActionsLog', JSON.stringify(globalActionsLog));
     localStorage.setItem('currentStarting5', JSON.stringify(currentStarting5));
     localStorage.setItem('matchSeason', matchSeason);
+    localStorage.setItem('matchInactivePlayerIds', JSON.stringify(matchInactivePlayerIds));
     localStorage.setItem('profileName', profileName);
     localStorage.setItem('profileClub', profileClub);
     localStorage.setItem('profileRole', profileRole);
     localStorage.setItem('profileNewsletter', JSON.stringify(profileNewsletter));
+
+    // If change was triggered by incoming remote snapshot, skip redundant write-back
+    if (isRemoteSnapshotSync.current) {
+      isRemoteSnapshotSync.current = false;
+      return;
+    }
 
     // Save to Firestore
     const userDocRef = doc(db, 'users', currentUser.uid);
@@ -1343,12 +1465,13 @@ export default function App() {
         globalActionsLog,
         currentStarting5,
         matchTeamId,
-        matchSeason
+        matchSeason,
+        matchInactivePlayerIds
       }
     }, { merge: true }).catch(err => {
       console.error("Fout bij opslaan naar Firestore:", err);
     });
-  }, [players, history, isMatchActive, matchTeamId, matchSeason, opponent, opponentScore, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5, currentUser, profileName, profileClub, profileRole, profileNewsletter]);
+  }, [players, history, isMatchActive, matchTeamId, matchSeason, opponent, opponentScore, gameClockRunning, currentPeriod, periodElapsed, matchClockStartTime, globalActionsLog, currentStarting5, matchInactivePlayerIds, currentUser, profileName, profileClub, profileRole, profileNewsletter]);
 
   const handleSaveProfile = async (updatedData: { name: string; club: string; role: string; newsletter: boolean }) => {
     if (!currentUser) return;
@@ -3038,96 +3161,283 @@ export default function App() {
           </div>
         </div>
       )}
- 
-       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-         {filteredPlayers.map(player => {
-           const liveTime = player.isRunning && player.lastStartTime 
-             ? player.totalTime + (Date.now() - player.lastStartTime) 
-             : player.totalTime;
- 
-           return (
-             <motion.div 
-               key={player.id}
-               layout
-               className={`rounded-2xl overflow-hidden shadow-xl border transition-all ${
-                 isMatchActive && player.isRunning 
-                   ? 'ring-1 ring-primary/40 border-primary/30' 
-                   : 'border-white/5'
-               } ${getTeamBgColorClass(activeTeamId)}`}
-             >
-               <div className="p-4 flex justify-between items-center bg-white/5 border-b border-white/5 gap-2">
-                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                   <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-black flex-shrink-0">
-                     #{player.number}
-                   </div>
-                   <div className="min-w-0 flex-1">
-                     <div className="flex items-center gap-2">
-                       <h3 className={`text-white leading-tight ${getNameFontSize(player.name)} truncate`} title={player.name}>
-                         {player.name}
-                       </h3>
-                       {isMatchActive && (
-                         <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${
-                           player.isRunning 
-                             ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                             : 'bg-white/5 text-text-muted border border-white/10'
-                         }`}>
-                           {player.isRunning ? 'Actief' : 'Bank'}
-                         </span>
-                       )}
-                     </div>
-                     <span className="text-[10px] text-text-muted uppercase tracking-wider font-bold">{player.position}</span>
-                   </div>
-                 </div>
-                 <div className="text-right flex-shrink-0">
-                   <div className={`text-3xl font-mono font-black ${player.isRunning && gameClockRunning ? 'text-primary animate-pulse' : (player.isRunning ? 'text-orange-400' : 'text-white')}`}>
-                     {formatTime(liveTime)}
-                   </div>
-                   {/* Beurten count removed */}
-                 </div>
-               </div>
- 
-               <div className="p-4 space-y-6">
-                 <div className="grid grid-cols-4 gap-2 sm:gap-3">
-                   <StatButton label="PTN" value={player.stats.points} onAdd={() => updateStat(player.id, 'points', 1)} onSub={() => updateStat(player.id, 'points', -1)} />
-                   <StatButton label="FG" value={`${player.stats.fgm}/${player.stats.fga}`} onAdd={() => updateStat(player.id, 'fgm', 1)} onSub={() => updateStat(player.id, 'fga', 1)} isSpecial />
-                   <StatButton label="3P" value={`${player.stats.threeFgm}/${player.stats.threeFga}`} onAdd={() => updateStat(player.id, 'threeFgm', 1)} onSub={() => updateStat(player.id, 'threeFga', 1)} isSpecial />
-                   <StatButton label="FT" value={`${player.stats.ftm}/${player.stats.fta}`} onAdd={() => updateStat(player.id, 'ftm', 1)} onSub={() => updateStat(player.id, 'fta', 1)} isSpecial />
-                 </div>
-                 
-                 <div className="grid grid-cols-2 xs:grid-cols-4 gap-2 sm:gap-3">
-                   <StatControl label="AST" value={player.stats.assists} onAdd={() => updateStat(player.id, 'assists', 1)} onSub={() => updateStat(player.id, 'assists', -1)} />
-                   <StatControl label="DEF REB" value={player.stats.defReb || 0} onAdd={() => updateStat(player.id, 'defReb', 1)} onSub={() => updateStat(player.id, 'defReb', -1)} />
-                   <StatControl label="OFF REB" value={player.stats.offReb || 0} onAdd={() => updateStat(player.id, 'offReb', 1)} onSub={() => updateStat(player.id, 'offReb', -1)} />
-                   <StatControl label="STL" value={player.stats.steals} onAdd={() => updateStat(player.id, 'steals', 1)} onSub={() => updateStat(player.id, 'steals', -1)} />
-                   <StatControl label="BLK" value={player.stats.blocks} onAdd={() => updateStat(player.id, 'blocks', 1)} onSub={() => updateStat(player.id, 'blocks', -1)} />
-                   <StatControl label="TO" value={player.stats.turnovers} onAdd={() => updateStat(player.id, 'turnovers', 1)} onSub={() => updateStat(player.id, 'turnovers', -1)} />
-                    <StatControl label="PF" value={player.stats.pf || 0} onAdd={() => updateStat(player.id, 'pf', 1)} onSub={() => updateStat(player.id, 'pf', -1)} />
-                   <button onClick={() => undoLastGlobalAction()} className="bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-text-muted text-[10px] font-bold transition-all border border-white/5 active:scale-95 py-3 sm:py-0">
-                     <RotateCcw size={12} className="mr-2" /> UNDO
-                   </button>
-                 </div>
 
-                <button 
-                  onClick={() => toggleTimer(player.id)}
-                  className={`w-full py-4 rounded-xl font-display font-black uppercase italic flex items-center justify-center gap-3 transition-all ${
-                    player.isRunning ? 'bg-red-500/20 text-red-500 border border-red-500/30' : 
-                    'bg-primary text-white shadow-lg shadow-primary/20 hover:scale-[1.02]'
-                  }`}
-                >
-                  {player.isRunning ? <Pause size={20} strokeWidth={3} /> : <Play size={20} fill="white" strokeWidth={3} />}
-                  {player.isRunning ? 'Wissel Uit' : 'Wissel In'}
-                </button>
-              </div>
-            </motion.div>
-          );
-        })}
-        {players.length === 0 && (
-          <div className="col-span-full py-20 text-center text-text-muted">
-            <Users className="mx-auto mb-4 opacity-20" size={48} />
-            <p>Geen spelers gevonden. Voeg spelers toe in het Spelers tabblad.</p>
+      {isMatchActive && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-emerald-500/10 border border-emerald-500/25 px-4 py-3 rounded-2xl shadow-lg">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+            <h3 className="font-display font-black italic uppercase tracking-wider text-xs sm:text-sm text-white">
+              In het Veld ({filteredPlayers.filter(p => p.isRunning).length}/5 Actief)
+            </h3>
+            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-mono font-bold px-2 py-0.5 rounded-full uppercase border border-emerald-500/30">
+              Live Sortering
+            </span>
           </div>
-        )}
-      </div>
+          <div className="text-[11px] text-text-muted flex items-center gap-3">
+            <span className="text-white/80 font-medium">
+              Bank: <strong className="text-white">{filteredPlayers.filter(p => !p.isRunning).length}</strong> wisselspelers
+            </span>
+            {filteredPlayers.filter(p => p.isRunning).length === 5 ? (
+              <span className="text-emerald-400 font-bold flex items-center gap-1">✓ Compleet (5)</span>
+            ) : filteredPlayers.filter(p => p.isRunning).length < 5 ? (
+              <span className="text-amber-400 font-bold flex items-center gap-1">⚠ {5 - filteredPlayers.filter(p => p.isRunning).length} speler(s) te weinig</span>
+            ) : (
+              <span className="text-red-400 font-bold flex items-center gap-1">⚠ {filteredPlayers.filter(p => p.isRunning).length} in veld</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      <LayoutGroup id="court-match-roster">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          {isMatchActive ? (
+            <>
+              {/* ACTIEVE SPELERS (IN HET VELD) */}
+              {filteredPlayers.filter(p => p.isRunning).length === 0 ? (
+                <div className="col-span-full p-6 text-center bg-dark/30 rounded-2xl border border-dashed border-white/10 text-text-muted">
+                  <p className="font-bold text-sm text-white mb-1">Geen spelers momenteel in het veld</p>
+                  <p className="text-xs">Klik hieronder op &quot;Wissel In&quot; bij 5 spelers om ze in het veld te brengen.</p>
+                </div>
+              ) : (
+                filteredPlayers.filter(p => p.isRunning).map(player => {
+                  const liveTime = player.isRunning && player.lastStartTime 
+                    ? player.totalTime + (Date.now() - player.lastStartTime) 
+                    : player.totalTime;
+
+                  return (
+                    <motion.div 
+                      key={player.id}
+                      layout
+                      layoutId={`court-player-${player.id}`}
+                      transition={{ type: "spring", stiffness: 350, damping: 30, mass: 0.8 }}
+                      className={`rounded-2xl overflow-hidden shadow-xl border ring-2 ring-emerald-500/50 border-emerald-500/40 shadow-lg shadow-emerald-950/20 ${getTeamBgColorClass(activeTeamId)}`}
+                    >
+                      <div className="p-4 flex justify-between items-center border-b border-white/5 gap-2 bg-emerald-500/10">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="relative shrink-0">
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center font-black flex-shrink-0 transition-colors bg-emerald-500 text-white shadow-md shadow-emerald-500/30">
+                              #{player.number}
+                            </div>
+                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 ring-2 ring-surface animate-pulse" title="In het veld" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <h3 className={`text-white leading-tight ${getNameFontSize(player.name)} truncate`} title={player.name}>
+                                {player.name}
+                              </h3>
+                              <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                Actief
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-text-muted uppercase tracking-wider font-bold">{player.position}</span>
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className={`text-3xl font-mono font-black ${gameClockRunning ? 'text-primary animate-pulse' : 'text-orange-400'}`}>
+                            {formatTime(liveTime)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-4 space-y-6">
+                        <div className="grid grid-cols-4 gap-2 sm:gap-3">
+                          <StatButton label="PTN" value={player.stats.points} onAdd={() => updateStat(player.id, 'points', 1)} onSub={() => updateStat(player.id, 'points', -1)} />
+                          <StatButton label="FG" value={`${player.stats.fgm}/${player.stats.fga}`} onAdd={() => updateStat(player.id, 'fgm', 1)} onSub={() => updateStat(player.id, 'fga', 1)} isSpecial />
+                          <StatButton label="3P" value={`${player.stats.threeFgm}/${player.stats.threeFga}`} onAdd={() => updateStat(player.id, 'threeFgm', 1)} onSub={() => updateStat(player.id, 'threeFga', 1)} isSpecial />
+                          <StatButton label="FT" value={`${player.stats.ftm}/${player.stats.fta}`} onAdd={() => updateStat(player.id, 'ftm', 1)} onSub={() => updateStat(player.id, 'fta', 1)} isSpecial />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 xs:grid-cols-4 gap-2 sm:gap-3">
+                          <StatControl label="AST" value={player.stats.assists} onAdd={() => updateStat(player.id, 'assists', 1)} onSub={() => updateStat(player.id, 'assists', -1)} />
+                          <StatControl label="DEF REB" value={player.stats.defReb || 0} onAdd={() => updateStat(player.id, 'defReb', 1)} onSub={() => updateStat(player.id, 'defReb', -1)} />
+                          <StatControl label="OFF REB" value={player.stats.offReb || 0} onAdd={() => updateStat(player.id, 'offReb', 1)} onSub={() => updateStat(player.id, 'offReb', -1)} />
+                          <StatControl label="STL" value={player.stats.steals} onAdd={() => updateStat(player.id, 'steals', 1)} onSub={() => updateStat(player.id, 'steals', -1)} />
+                          <StatControl label="BLK" value={player.stats.blocks} onAdd={() => updateStat(player.id, 'blocks', 1)} onSub={() => updateStat(player.id, 'blocks', -1)} />
+                          <StatControl label="TO" value={player.stats.turnovers} onAdd={() => updateStat(player.id, 'turnovers', 1)} onSub={() => updateStat(player.id, 'turnovers', -1)} />
+                          <StatControl label="PF" value={player.stats.pf || 0} onAdd={() => updateStat(player.id, 'pf', 1)} onSub={() => updateStat(player.id, 'pf', -1)} />
+                          <button type="button" onClick={() => undoLastGlobalAction()} className="bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-text-muted text-[10px] font-bold transition-all border border-white/5 active:scale-95 py-3 sm:py-0 cursor-pointer">
+                            <RotateCcw size={12} className="mr-2" /> UNDO
+                          </button>
+                        </div>
+
+                        <button 
+                          type="button"
+                          onClick={() => toggleTimer(player.id)}
+                          className="w-full py-4 rounded-xl font-display font-black uppercase italic flex items-center justify-center gap-3 transition-all cursor-pointer select-none active:scale-95 bg-red-500/20 text-red-500 border border-red-500/30 sm:hover:bg-red-500/30"
+                        >
+                          <Pause size={20} strokeWidth={3} />
+                          Wissel Uit
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                })
+              )}
+
+              {/* WISSELSPELERS / BANK SECTIE */}
+              {filteredPlayers.filter(p => !p.isRunning).length > 0 && (
+                <div className="col-span-full pt-6 pb-2 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Users className="text-text-muted" size={18} />
+                    <h3 className="font-display font-black italic uppercase tracking-wider text-xs sm:text-sm text-text-muted">
+                      Wisselspelers / Bank ({filteredPlayers.filter(p => !p.isRunning).length})
+                    </h3>
+                  </div>
+                  <span className="text-[10px] text-text-muted/80 font-bold uppercase tracking-wider">
+                    Klik &quot;Wissel In&quot; om speler in te zetten
+                  </span>
+                </div>
+              )}
+
+              {filteredPlayers.filter(p => !p.isRunning).map(player => {
+                const liveTime = player.isRunning && player.lastStartTime 
+                  ? player.totalTime + (Date.now() - player.lastStartTime) 
+                  : player.totalTime;
+
+                return (
+                  <motion.div 
+                    key={player.id}
+                    layout
+                    layoutId={`court-player-${player.id}`}
+                    transition={{ type: "spring", stiffness: 350, damping: 30, mass: 0.8 }}
+                    className={`rounded-2xl overflow-hidden shadow-xl border border-white/5 opacity-90 ${getTeamBgColorClass(activeTeamId)}`}
+                  >
+                    <div className="p-4 flex justify-between items-center border-b border-white/5 gap-2 bg-white/5">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="relative shrink-0">
+                          <div className="w-10 h-10 rounded-full flex items-center justify-center font-black flex-shrink-0 transition-colors bg-primary/20 text-primary">
+                            #{player.number}
+                          </div>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className={`text-white leading-tight ${getNameFontSize(player.name)} truncate`} title={player.name}>
+                              {player.name}
+                            </h3>
+                            <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 bg-white/5 text-text-muted border border-white/10">
+                              Bank
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-text-muted uppercase tracking-wider font-bold">{player.position}</span>
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-3xl font-mono font-black text-white">
+                          {formatTime(liveTime)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-4 space-y-6">
+                      <div className="grid grid-cols-4 gap-2 sm:gap-3">
+                        <StatButton label="PTN" value={player.stats.points} onAdd={() => updateStat(player.id, 'points', 1)} onSub={() => updateStat(player.id, 'points', -1)} />
+                        <StatButton label="FG" value={`${player.stats.fgm}/${player.stats.fga}`} onAdd={() => updateStat(player.id, 'fgm', 1)} onSub={() => updateStat(player.id, 'fga', 1)} isSpecial />
+                        <StatButton label="3P" value={`${player.stats.threeFgm}/${player.stats.threeFga}`} onAdd={() => updateStat(player.id, 'threeFgm', 1)} onSub={() => updateStat(player.id, 'threeFga', 1)} isSpecial />
+                        <StatButton label="FT" value={`${player.stats.ftm}/${player.stats.fta}`} onAdd={() => updateStat(player.id, 'ftm', 1)} onSub={() => updateStat(player.id, 'fta', 1)} isSpecial />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 xs:grid-cols-4 gap-2 sm:gap-3">
+                        <StatControl label="AST" value={player.stats.assists} onAdd={() => updateStat(player.id, 'assists', 1)} onSub={() => updateStat(player.id, 'assists', -1)} />
+                        <StatControl label="DEF REB" value={player.stats.defReb || 0} onAdd={() => updateStat(player.id, 'defReb', 1)} onSub={() => updateStat(player.id, 'defReb', -1)} />
+                        <StatControl label="OFF REB" value={player.stats.offReb || 0} onAdd={() => updateStat(player.id, 'offReb', 1)} onSub={() => updateStat(player.id, 'offReb', -1)} />
+                        <StatControl label="STL" value={player.stats.steals} onAdd={() => updateStat(player.id, 'steals', 1)} onSub={() => updateStat(player.id, 'steals', -1)} />
+                        <StatControl label="BLK" value={player.stats.blocks} onAdd={() => updateStat(player.id, 'blocks', 1)} onSub={() => updateStat(player.id, 'blocks', -1)} />
+                        <StatControl label="TO" value={player.stats.turnovers} onAdd={() => updateStat(player.id, 'turnovers', 1)} onSub={() => updateStat(player.id, 'turnovers', -1)} />
+                        <StatControl label="PF" value={player.stats.pf || 0} onAdd={() => updateStat(player.id, 'pf', 1)} onSub={() => updateStat(player.id, 'pf', -1)} />
+                        <button type="button" onClick={() => undoLastGlobalAction()} className="bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-text-muted text-[10px] font-bold transition-all border border-white/5 active:scale-95 py-3 sm:py-0 cursor-pointer">
+                          <RotateCcw size={12} className="mr-2" /> UNDO
+                        </button>
+                      </div>
+
+                      <button 
+                        type="button"
+                        onClick={() => toggleTimer(player.id)}
+                        className="w-full py-4 rounded-xl font-display font-black uppercase italic flex items-center justify-center gap-3 transition-all cursor-pointer select-none active:scale-95 bg-primary text-white shadow-lg shadow-primary/20 sm:hover:scale-[1.01]"
+                      >
+                        <Play size={20} fill="white" strokeWidth={3} />
+                        Wissel In
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </>
+          ) : (
+            filteredPlayers.map(player => {
+              const liveTime = player.isRunning && player.lastStartTime 
+                ? player.totalTime + (Date.now() - player.lastStartTime) 
+                : player.totalTime;
+
+              return (
+                <div 
+                  key={player.id}
+                  className={`rounded-2xl overflow-hidden shadow-xl border border-white/5 opacity-90 ${getTeamBgColorClass(activeTeamId)}`}
+                >
+                  <div className="p-4 flex justify-between items-center border-b border-white/5 gap-2 bg-white/5">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="relative shrink-0">
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center font-black flex-shrink-0 transition-colors bg-primary/20 text-primary">
+                          #{player.number}
+                        </div>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className={`text-white leading-tight ${getNameFontSize(player.name)} truncate`} title={player.name}>
+                            {player.name}
+                          </h3>
+                        </div>
+                        <span className="text-[10px] text-text-muted uppercase tracking-wider font-bold">{player.position}</span>
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-3xl font-mono font-black text-white">
+                        {formatTime(liveTime)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 space-y-6">
+                    <div className="grid grid-cols-4 gap-2 sm:gap-3">
+                      <StatButton label="PTN" value={player.stats.points} onAdd={() => updateStat(player.id, 'points', 1)} onSub={() => updateStat(player.id, 'points', -1)} />
+                      <StatButton label="FG" value={`${player.stats.fgm}/${player.stats.fga}`} onAdd={() => updateStat(player.id, 'fgm', 1)} onSub={() => updateStat(player.id, 'fga', 1)} isSpecial />
+                      <StatButton label="3P" value={`${player.stats.threeFgm}/${player.stats.threeFga}`} onAdd={() => updateStat(player.id, 'threeFgm', 1)} onSub={() => updateStat(player.id, 'threeFga', 1)} isSpecial />
+                      <StatButton label="FT" value={`${player.stats.ftm}/${player.stats.fta}`} onAdd={() => updateStat(player.id, 'ftm', 1)} onSub={() => updateStat(player.id, 'fta', 1)} isSpecial />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 xs:grid-cols-4 gap-2 sm:gap-3">
+                      <StatControl label="AST" value={player.stats.assists} onAdd={() => updateStat(player.id, 'assists', 1)} onSub={() => updateStat(player.id, 'assists', -1)} />
+                      <StatControl label="DEF REB" value={player.stats.defReb || 0} onAdd={() => updateStat(player.id, 'defReb', 1)} onSub={() => updateStat(player.id, 'defReb', -1)} />
+                      <StatControl label="OFF REB" value={player.stats.offReb || 0} onAdd={() => updateStat(player.id, 'offReb', 1)} onSub={() => updateStat(player.id, 'offReb', -1)} />
+                      <StatControl label="STL" value={player.stats.steals} onAdd={() => updateStat(player.id, 'steals', 1)} onSub={() => updateStat(player.id, 'steals', -1)} />
+                      <StatControl label="BLK" value={player.stats.blocks} onAdd={() => updateStat(player.id, 'blocks', 1)} onSub={() => updateStat(player.id, 'blocks', -1)} />
+                      <StatControl label="TO" value={player.stats.turnovers} onAdd={() => updateStat(player.id, 'turnovers', 1)} onSub={() => updateStat(player.id, 'turnovers', -1)} />
+                      <StatControl label="PF" value={player.stats.pf || 0} onAdd={() => updateStat(player.id, 'pf', 1)} onSub={() => updateStat(player.id, 'pf', -1)} />
+                      <button type="button" onClick={() => undoLastGlobalAction()} className="bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-text-muted text-[10px] font-bold transition-all border border-white/5 active:scale-95 py-3 sm:py-0 cursor-pointer">
+                        <RotateCcw size={12} className="mr-2" /> UNDO
+                      </button>
+                    </div>
+
+                    <button 
+                      type="button"
+                      disabled
+                      className="w-full py-4 rounded-xl font-display font-black uppercase italic flex items-center justify-center gap-3 transition-all opacity-40 cursor-not-allowed bg-white/10 text-white"
+                    >
+                      <Play size={20} fill="white" strokeWidth={3} />
+                      Start Match Eerst
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+          {players.length === 0 && (
+            <div className="col-span-full py-20 text-center text-text-muted">
+              <Users className="mx-auto mb-4 opacity-20" size={48} />
+              <p>Geen spelers gevonden. Voeg spelers toe in het Spelers tabblad.</p>
+            </div>
+          )}
+        </div>
+      </LayoutGroup>
     </div>
   );
 

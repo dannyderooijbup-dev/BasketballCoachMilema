@@ -17,10 +17,12 @@ import {
   Users,
   Search,
   ArrowUpDown,
-  ExternalLink
+  ExternalLink,
+  ChevronDown,
+  Shield
 } from 'lucide-react';
-import { MatchHistoryEntry, Player, Team } from '../types';
-import { formatTime, formatDate, calculatePercentage } from '../utils';
+import { MatchHistoryEntry, Player, Team, TeamPlayer } from '../types';
+import { formatTime, formatDate, calculatePercentage, getPlayerShifts } from '../utils';
 import { exportPlayerMatchLogToPDF } from '../pdfUtils';
 
 interface PlayerMatchStatsModalProps {
@@ -30,6 +32,7 @@ interface PlayerMatchStatsModalProps {
   theme: 'dark' | 'light';
   activeTeamId: string;
   teams: Team[];
+  teamPlayers?: TeamPlayer[];
   onClose: () => void;
   onSelectPlayer: (player: { id?: string; name: string; number: string; position?: string }) => void;
   onOpenMatchDetail: (match: MatchHistoryEntry) => void;
@@ -44,14 +47,41 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
   theme,
   activeTeamId,
   teams,
+  teamPlayers,
   onClose,
   onSelectPlayer,
   onOpenMatchDetail
 }) => {
   const [selectedSeason, setSelectedSeason] = useState<string>('All');
+  const [selectedTeam, setSelectedTeam] = useState<string>(activeTeamId && activeTeamId !== 'all' ? activeTeamId : 'All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortAsc, setSortAsc] = useState<boolean>(false);
+  const [expandedShifts, setExpandedShifts] = useState<Record<string, boolean>>({});
+  const [expandAllShifts, setExpandAllShifts] = useState<boolean>(false);
+
+  // Determine all teams this player is associated with (either through match history or teamPlayers link)
+  const relevantTeams = useMemo(() => {
+    const historyTeamIds = new Set<string>();
+    history.forEach(m => {
+      const hasPlayer = m.players.some(p => 
+        (player.id && p.id === player.id) || 
+        p.name.trim().toLowerCase() === player.name.trim().toLowerCase()
+      );
+      if (hasPlayer && m.teamId) {
+        historyTeamIds.add(m.teamId);
+      }
+    });
+
+    if (player.id && Array.isArray(teamPlayers)) {
+      teamPlayers
+        .filter(tp => tp.playerId === player.id)
+        .forEach(tp => historyTeamIds.add(tp.teamId));
+    }
+
+    const matched = teams.filter(t => historyTeamIds.has(t.id));
+    return matched.length > 0 ? matched : teams;
+  }, [teams, history, player, teamPlayers]);
 
   // Filter matches in which this player participated
   const playerMatches = useMemo(() => {
@@ -60,6 +90,11 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
         // Season filter
         const matchSeason = m.season || '2026/2027';
         if (selectedSeason !== 'All' && matchSeason !== selectedSeason) {
+          return false;
+        }
+
+        // Team filter
+        if (selectedTeam !== 'All' && m.teamId !== selectedTeam) {
           return false;
         }
 
@@ -85,16 +120,18 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
         const hasScore = m.teamScore !== undefined && m.opponentScore !== undefined;
         const isWin = hasScore && (m.teamScore! > m.opponentScore!);
         const isLoss = hasScore && (m.teamScore! < m.opponentScore!);
+        const shifts = getPlayerShifts(playerStats);
 
         return {
           match: m,
           playerStats,
           isStarter,
           isWin,
-          isLoss
+          isLoss,
+          shifts
         };
       });
-  }, [history, player, selectedSeason]);
+  }, [history, player, selectedSeason, selectedTeam]);
 
   // Filtered and sorted matches
   const displayedMatches = useMemo(() => {
@@ -258,7 +295,12 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
       pfpg: (totalPf / totalMatches).toFixed(1),
       totalPlusMinus,
       avgPlusMinus: (totalPlusMinus / totalMatches).toFixed(1),
-      starterCount
+      starterCount,
+      totalShifts: playerMatches.reduce((acc, pm) => acc + (pm.shifts?.length || 0), 0),
+      avgShiftDuration: (() => {
+        const tShifts = playerMatches.reduce((acc, pm) => acc + (pm.shifts?.length || 0), 0);
+        return tShifts > 0 ? Math.round(totalTime / tShifts) : 0;
+      })()
     };
   }, [playerMatches]);
 
@@ -268,6 +310,8 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
       playerStats: pm.playerStats
     }));
 
+    const selectedTeamObj = teams.find(t => t.id === selectedTeam);
+
     exportPlayerMatchLogToPDF(
       {
         name: player.name,
@@ -276,7 +320,8 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
       },
       matchData,
       theme,
-      selectedSeason
+      selectedSeason,
+      selectedTeamObj?.name
     );
   };
 
@@ -338,9 +383,31 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
               </div>
             </div>
 
-            {/* Actions: Season Filter, PDF Export, Close */}
+            {/* Actions: Team Filter, Season Filter, PDF Export, Close */}
             <div className="flex flex-wrap items-center gap-2 sm:gap-3 self-end sm:self-auto">
-              <div className="flex items-center gap-1.5 bg-dark/70 border border-white/10 rounded-xl px-2.5 py-1.5">
+              {/* Team Filter */}
+              {relevantTeams.length > 0 && (
+                <div className="flex items-center gap-1.5 bg-dark/70 border border-white/10 rounded-xl px-2.5 py-1.5 shadow-sm">
+                  <Shield size={13} className="text-primary shrink-0" />
+                  <span className="text-[10px] text-text-muted uppercase font-black tracking-wider">Team:</span>
+                  <select
+                    value={selectedTeam}
+                    onChange={(e) => setSelectedTeam(e.target.value)}
+                    className="bg-transparent border-none text-white text-xs font-bold cursor-pointer focus:outline-none max-w-[130px] sm:max-w-[180px] truncate"
+                    title="Filter statistieken op een specifiek team"
+                  >
+                    <option value="All" className="bg-dark text-white">Alle Teams</option>
+                    {relevantTeams.map(t => (
+                      <option key={t.id} value={t.id} className="bg-dark text-white">
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Season Filter */}
+              <div className="flex items-center gap-1.5 bg-dark/70 border border-white/10 rounded-xl px-2.5 py-1.5 shadow-sm">
                 <span className="text-[10px] text-text-muted uppercase font-black tracking-wider">Seizoen:</span>
                 <select
                   value={selectedSeason}
@@ -357,7 +424,7 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
               {playerMatches.length > 0 && (
                 <button
                   onClick={handleDownloadPDF}
-                  className="flex items-center gap-1.5 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 px-3 py-1.5 rounded-xl text-xs font-black uppercase italic font-display transition-all active:scale-95 shadow-md shadow-primary/5"
+                  className="flex items-center gap-1.5 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 px-3 py-1.5 rounded-xl text-xs font-black uppercase italic font-display transition-all active:scale-95 shadow-md shadow-primary/5 cursor-pointer"
                   title="Exporteer wedstrijden van deze speler naar PDF"
                 >
                   <Download size={15} />
@@ -367,7 +434,7 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
 
               <button 
                 onClick={onClose} 
-                className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-text-muted hover:text-white transition-colors active:scale-90"
+                className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-text-muted hover:text-white transition-colors active:scale-90 cursor-pointer"
                 title="Sluiten"
               >
                 <X size={20} />
@@ -385,11 +452,13 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
               <div>
                 <h4 className="font-display font-black uppercase italic tracking-tight text-sm sm:text-base text-primary flex items-center gap-2">
                   <Award size={18} />
-                  Gemiddelden & Totalen ({selectedSeason === 'All' ? 'Alle Seizoenen' : selectedSeason})
+                  Gemiddelden & Totalen ({selectedSeason === 'All' ? 'Alle Seizoenen' : selectedSeason}
+                  {selectedTeam !== 'All' ? ` • ${teams.find(t => t.id === selectedTeam)?.name || 'Team'}` : ''})
                 </h4>
                 <p className="text-[10px] text-text-muted uppercase tracking-widest font-bold mt-0.5">
                   Gebaseerd op {aggregates.totalMatches} gespeelde {aggregates.totalMatches === 1 ? 'wedstrijd' : 'wedstrijden'}
                   {aggregates.starterCount > 0 && ` (${aggregates.starterCount}x basisopstelling)`}
+                  {aggregates.totalShifts > 0 && ` • ${aggregates.totalShifts} speelbeurten geregistreerd`}
                 </p>
               </div>
               <div className="text-left sm:text-right flex items-center gap-3">
@@ -419,7 +488,9 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
               <div className="bg-dark/60 p-3 rounded-2xl border border-white/5 text-center">
                 <p className="text-[9px] text-text-muted uppercase font-black tracking-wider">Speeltijd Gem.</p>
                 <p className="text-xl sm:text-2xl font-mono font-black text-white mt-0.5">{formatTime(aggregates.avgTime)}</p>
-                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">per wedstrijd</p>
+                <p className="text-[9px] text-text-muted/70 mt-0.5 font-bold">
+                  {aggregates.totalShifts > 0 ? `Gem. beurt: ${formatTime(aggregates.avgShiftDuration)}` : 'per wedstrijd'}
+                </p>
               </div>
 
               <div className="bg-dark/60 p-3 rounded-2xl border border-white/5 text-center">
@@ -497,8 +568,20 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
                 </p>
               </div>
 
-              {/* Search Opponent */}
-              <div className="flex items-center gap-2">
+              {/* Search Opponent & Toggle all shifts */}
+              <div className="flex flex-wrap items-center gap-2">
+                {playerMatches.some(pm => pm.shifts && pm.shifts.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => setExpandAllShifts(!expandAllShifts)}
+                    className="flex items-center gap-1.5 bg-dark/60 hover:bg-dark border border-white/10 hover:border-primary/40 px-2.5 py-1.5 rounded-xl text-xs text-text-muted hover:text-white transition-all cursor-pointer font-bold shadow-sm"
+                    title="Toon of verberg alle speelbeurten voor alle wedstrijden"
+                  >
+                    <Clock size={13} className="text-primary" />
+                    <span>{expandAllShifts ? 'Verberg Speelbeurten' : 'Toon Speelbeurten'}</span>
+                  </button>
+                )}
+
                 <div className="relative">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
                   <input
@@ -506,7 +589,7 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Zoek tegenstander..."
-                    className="bg-dark border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-text-muted focus:outline-none focus:border-primary w-40 sm:w-48 transition-colors"
+                    className="bg-dark border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-text-muted focus:outline-none focus:border-primary w-36 sm:w-48 transition-colors"
                   />
                 </div>
               </div>
@@ -589,132 +672,199 @@ export const PlayerMatchStatsModal: React.FC<PlayerMatchStatsModalProps> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {displayedMatches.map(({ match, playerStats, isStarter, isWin, isLoss }) => {
+                      {displayedMatches.map(({ match, playerStats, isStarter, isWin, isLoss, shifts }) => {
                         const st = playerStats.stats;
                         const hasScore = match.teamScore !== undefined && match.opponentScore !== undefined;
                         const pmVal = st.plusMinus || 0;
+                        const isExpanded = expandAllShifts || !!expandedShifts[match.matchId];
 
                         return (
-                          <tr 
-                            key={match.matchId} 
-                            className="border-b border-white/5 hover:bg-white/5 transition-colors group"
-                          >
-                            {/* Datum */}
-                            <td className="px-3 py-3 whitespace-nowrap text-xs text-text-muted font-medium">
-                              {formatDate(match.date).split(' om ')[0]}
-                            </td>
+                          <React.Fragment key={match.matchId}>
+                            <tr 
+                              className={`border-b border-white/5 hover:bg-white/5 transition-colors group ${isExpanded && shifts.length > 0 ? 'bg-white/[0.02]' : ''}`}
+                            >
+                              {/* Datum */}
+                              <td className="px-3 py-3 whitespace-nowrap text-xs text-text-muted font-medium">
+                                {formatDate(match.date).split(' om ')[0]}
+                              </td>
 
-                            {/* Tegenstander & Score */}
-                            <td className="px-3 py-3 whitespace-nowrap">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-white text-xs sm:text-sm">
-                                  vs {match.opponent}
-                                </span>
-                                {hasScore && (
-                                  <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
-                                    isWin 
-                                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25' 
-                                      : isLoss 
-                                        ? 'bg-red-500/15 text-red-400 border border-red-500/25' 
-                                        : 'bg-white/10 text-white'
-                                  }`}>
-                                    {isWin ? 'W' : isLoss ? 'V' : 'G'} {match.teamScore}-{match.opponentScore}
+                              {/* Tegenstander & Score */}
+                              <td className="px-3 py-3 whitespace-nowrap">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-white text-xs sm:text-sm">
+                                    vs {match.opponent}
                                   </span>
+                                  {match.teamId && selectedTeam === 'All' && (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-text-muted shrink-0">
+                                      {teams.find(t => t.id === match.teamId)?.name || 'Team'}
+                                    </span>
+                                  )}
+                                  {hasScore && (
+                                    <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                                      isWin 
+                                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25' 
+                                        : isLoss 
+                                          ? 'bg-red-500/15 text-red-400 border border-red-500/25' 
+                                          : 'bg-white/10 text-white'
+                                    }`}>
+                                      {isWin ? 'W' : isLoss ? 'V' : 'G'} {match.teamScore}-{match.opponentScore}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* Rol */}
+                              <td className="px-3 py-3 whitespace-nowrap">
+                                <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                  isStarter 
+                                    ? 'bg-primary/20 text-primary border border-primary/30' 
+                                    : 'bg-white/5 text-text-muted'
+                                }`}>
+                                  {isStarter ? 'Starter' : 'Bank'}
+                                </span>
+                              </td>
+
+                              {/* Speeltijd & Speelbeurten */}
+                              <td className="px-3 py-3 whitespace-nowrap">
+                                <div className="font-mono text-xs sm:text-sm font-semibold text-white">
+                                  {formatTime(playerStats.totalTime || 0)}
+                                </div>
+                                {shifts.length > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedShifts(prev => ({ ...prev, [match.matchId]: !prev[match.matchId] }))}
+                                    className="inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-primary transition-colors font-sans mt-0.5 group/btn cursor-pointer"
+                                    title="Klik om de duur van elke speelbeurt te bekijken"
+                                  >
+                                    <Clock size={10} className="text-primary group-hover/btn:scale-110 transition-transform" />
+                                    <span className="font-bold underline decoration-dotted underline-offset-2">
+                                      {shifts.length} {shifts.length === 1 ? 'beurt' : 'beurten'}
+                                    </span>
+                                    <ChevronDown 
+                                      size={11} 
+                                      className={`transition-transform duration-200 ${isExpanded ? 'rotate-180 text-primary' : ''}`} 
+                                    />
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] text-text-muted/60 font-sans block">0 beurten</span>
                                 )}
-                              </div>
-                            </td>
+                              </td>
 
-                            {/* Rol */}
-                            <td className="px-3 py-3 whitespace-nowrap">
-                              <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                                isStarter 
-                                  ? 'bg-primary/20 text-primary border border-primary/30' 
-                                  : 'bg-white/5 text-text-muted'
+                              {/* PTN */}
+                              <td className="px-3 py-3 whitespace-nowrap font-mono font-black text-primary text-xs sm:text-sm">
+                                {st.points || 0}
+                              </td>
+
+                              {/* FG */}
+                              <td className="px-3 py-3 whitespace-nowrap font-mono text-xs">
+                                <span className="text-white font-bold">{st.fgm || 0}/{st.fga || 0}</span>
+                                <span className="text-[10px] text-text-muted ml-1.5">({calculatePercentage(st.fgm || 0, st.fga || 0)})</span>
+                              </td>
+
+                              {/* 3P */}
+                              <td className="px-3 py-3 whitespace-nowrap font-mono text-xs">
+                                <span className="text-white font-bold">{st.threeFgm || 0}/{st.threeFga || 0}</span>
+                                <span className="text-[10px] text-text-muted ml-1.5">({calculatePercentage(st.threeFgm || 0, st.threeFga || 0)})</span>
+                              </td>
+
+                              {/* FT */}
+                              <td className="px-3 py-3 whitespace-nowrap font-mono text-xs">
+                                <span className="text-white font-bold">{st.ftm || 0}/{st.fta || 0}</span>
+                                <span className="text-[10px] text-text-muted ml-1.5">({calculatePercentage(st.ftm || 0, st.fta || 0)})</span>
+                              </td>
+
+                              {/* REB */}
+                              <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right">
+                                <span className="text-white font-bold">{st.rebounds || 0}</span>
+                                <span className="text-[9px] text-text-muted ml-1">({st.offReb || 0}o/{st.defReb || 0}d)</span>
+                              </td>
+
+                              {/* AST */}
+                              <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right font-bold text-white">
+                                {st.assists || 0}
+                              </td>
+
+                              {/* STL */}
+                              <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right text-text-muted">
+                                {st.steals || 0}
+                              </td>
+
+                              {/* BLK */}
+                              <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right text-text-muted">
+                                {st.blocks || 0}
+                              </td>
+
+                              {/* TO */}
+                              <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right text-text-muted">
+                                {st.turnovers || 0}
+                              </td>
+
+                              {/* PF */}
+                              <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right font-semibold text-red-400">
+                                {st.pf || 0}
+                              </td>
+
+                              {/* +/- */}
+                              <td className={`px-3 py-3 whitespace-nowrap font-mono text-xs text-right font-bold ${
+                                pmVal > 0 ? 'text-green-400' : pmVal < 0 ? 'text-red-400' : 'text-white'
                               }`}>
-                                {isStarter ? 'Starter' : 'Bank'}
-                              </span>
-                            </td>
+                                {pmVal > 0 ? `+${pmVal}` : pmVal}
+                              </td>
 
-                            {/* Speeltijd */}
-                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs sm:text-sm font-semibold text-white">
-                              {formatTime(playerStats.totalTime || 0)}
-                            </td>
+                              {/* Bekijk Match Knop */}
+                              <td className="px-3 py-3 whitespace-nowrap text-center">
+                                <button
+                                  onClick={() => {
+                                    onClose();
+                                    onOpenMatchDetail(match);
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-lg transition-all active:scale-95 cursor-pointer"
+                                  title="Open volledige wedstrijdstatistieken"
+                                >
+                                  Match <ExternalLink size={11} />
+                                </button>
+                              </td>
+                            </tr>
 
-                            {/* PTN */}
-                            <td className="px-3 py-3 whitespace-nowrap font-mono font-black text-primary text-xs sm:text-sm">
-                              {st.points || 0}
-                            </td>
-
-                            {/* FG */}
-                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs">
-                              <span className="text-white font-bold">{st.fgm || 0}/{st.fga || 0}</span>
-                              <span className="text-[10px] text-text-muted ml-1.5">({calculatePercentage(st.fgm || 0, st.fga || 0)})</span>
-                            </td>
-
-                            {/* 3P */}
-                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs">
-                              <span className="text-white font-bold">{st.threeFgm || 0}/{st.threeFga || 0}</span>
-                              <span className="text-[10px] text-text-muted ml-1.5">({calculatePercentage(st.threeFgm || 0, st.threeFga || 0)})</span>
-                            </td>
-
-                            {/* FT */}
-                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs">
-                              <span className="text-white font-bold">{st.ftm || 0}/{st.fta || 0}</span>
-                              <span className="text-[10px] text-text-muted ml-1.5">({calculatePercentage(st.ftm || 0, st.fta || 0)})</span>
-                            </td>
-
-                            {/* REB */}
-                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right">
-                              <span className="text-white font-bold">{st.rebounds || 0}</span>
-                              <span className="text-[9px] text-text-muted ml-1">({st.offReb || 0}o/{st.defReb || 0}d)</span>
-                            </td>
-
-                            {/* AST */}
-                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right font-bold text-white">
-                              {st.assists || 0}
-                            </td>
-
-                            {/* STL */}
-                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right text-text-muted">
-                              {st.steals || 0}
-                            </td>
-
-                            {/* BLK */}
-                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right text-text-muted">
-                              {st.blocks || 0}
-                            </td>
-
-                            {/* TO */}
-                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right text-text-muted">
-                              {st.turnovers || 0}
-                            </td>
-
-                            {/* PF */}
-                            <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-right font-semibold text-red-400">
-                              {st.pf || 0}
-                            </td>
-
-                            {/* +/- */}
-                            <td className={`px-3 py-3 whitespace-nowrap font-mono text-xs text-right font-bold ${
-                              pmVal > 0 ? 'text-green-400' : pmVal < 0 ? 'text-red-400' : 'text-white'
-                            }`}>
-                              {pmVal > 0 ? `+${pmVal}` : pmVal}
-                            </td>
-
-                            {/* Bekijk Match Knop */}
-                            <td className="px-3 py-3 whitespace-nowrap text-center">
-                              <button
-                                onClick={() => {
-                                  onClose();
-                                  onOpenMatchDetail(match);
-                                }}
-                                className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-lg transition-all active:scale-95"
-                                title="Open volledige wedstrijdstatistieken"
-                              >
-                                Match <ExternalLink size={11} />
-                              </button>
-                            </td>
-                          </tr>
+                            {/* Expandable Speelbeurten Detail Row */}
+                            {isExpanded && shifts.length > 0 && (
+                              <tr key={`${match.matchId}-shifts`} className="bg-primary/5 border-b border-primary/20">
+                                <td colSpan={16} className="px-4 py-2.5">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                    <div className="flex items-center gap-2">
+                                      <Clock size={14} className="text-primary shrink-0" />
+                                      <span className="text-xs font-bold text-white uppercase tracking-wider">
+                                        Speelbeurten ({shifts.length}):
+                                      </span>
+                                      <span className="text-[11px] text-text-muted">
+                                        Totale speeltijd: <strong className="text-white font-mono">{formatTime(playerStats.totalTime || 0)}</strong>
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      {shifts.map((s, sIdx) => (
+                                        <div 
+                                          key={sIdx}
+                                          className="flex items-center gap-1.5 bg-dark/80 border border-white/10 px-2.5 py-1 rounded-lg text-xs font-mono shadow-sm"
+                                        >
+                                          <span className="text-[10px] text-primary font-bold font-sans uppercase">
+                                            Beurt {s.shiftNumber || sIdx + 1}:
+                                          </span>
+                                          <span className="text-white font-bold font-mono">
+                                            {formatTime(s.duration)}
+                                          </span>
+                                        </div>
+                                      ))}
+                                      {shifts.length > 1 && (
+                                        <div className="text-[10px] text-text-muted font-sans pl-2 border-l border-white/10 hidden sm:block">
+                                          Gem. beurt: <strong className="text-white font-mono">{formatTime(Math.round((playerStats.totalTime || 0) / shifts.length))}</strong>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
                         );
                       })}
                     </tbody>

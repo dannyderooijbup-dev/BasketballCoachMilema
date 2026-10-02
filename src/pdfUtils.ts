@@ -372,10 +372,11 @@ export function exportSeasonStatsToPDF(stats: any[], theme: 'dark' | 'light' = '
 }
 
 export function exportPlayerMatchLogToPDF(
-  player: { name: string; number: string; position: string },
+  player: { name: string; number: string; position?: string },
   matchData: { match: MatchHistoryEntry; playerStats: any }[],
   theme: 'dark' | 'light' = 'dark',
-  seasonFilter: string = 'All'
+  seasonFilter: string = 'All',
+  teamFilterName?: string
 ) {
   const doc = new jsPDF();
   const isLight = theme === 'light';
@@ -417,7 +418,11 @@ export function exportPlayerMatchLogToPDF(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(255, 106, 0);
-  doc.text(`${player.position}  |  Seizoen: ${seasonFilter === 'All' ? 'Alle Seizoenen' : seasonFilter}  |  ${matchData.length} Gespeelde Wedstrijden`, 14, 32);
+  const subParts: string[] = [];
+  if (teamFilterName) subParts.push(`Team: ${teamFilterName}`);
+  subParts.push(`Seizoen: ${seasonFilter === 'All' ? 'Alle Seizoenen' : seasonFilter}`);
+  subParts.push(`${matchData.length} Gespeelde Wedstrijden`);
+  doc.text(subParts.join('  |  '), 14, 32);
 
   doc.setDrawColor(255, 106, 0);
   doc.setLineWidth(0.5);
@@ -427,7 +432,6 @@ export function exportPlayerMatchLogToPDF(
     const st = playerStats.stats || playerStats;
     const pmVal = st.plusMinus || 0;
     const pmStr = pmVal > 0 ? `+${pmVal}` : `${pmVal}`;
-    const isStarter = Array.isArray(match.starting5) && (match.starting5.includes(player.name) || match.starting5.includes(playerStats.name));
     const scoreStr = (match.teamScore !== undefined && match.opponentScore !== undefined) 
       ? `${match.teamScore}-${match.opponentScore}` 
       : '';
@@ -435,7 +439,6 @@ export function exportPlayerMatchLogToPDF(
     return [
       formatDate(match.date).split(' om ')[0],
       `VS ${match.opponent} ${scoreStr ? `(${scoreStr})` : ''}`,
-      isStarter ? 'Starter' : 'Bank',
       formatTime(playerStats.totalTime || 0),
       st.points || 0,
       `${st.fgm || 0}/${st.fga || 0} (${calculatePercentage(st.fgm || 0, st.fga || 0)})`,
@@ -453,7 +456,7 @@ export function exportPlayerMatchLogToPDF(
 
   autoTable(doc, {
     startY: 42,
-    head: [['Datum', 'Tegenstander', 'Rol', 'Tijd', 'PTN', 'FG (M/A)', '3P (M/A)', 'FT (M/A)', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PF', '+/-']],
+    head: [['Datum', 'Tegenstander', 'Tijd', 'PTN', 'FG (M/A)', '3P (M/A)', 'FT (M/A)', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PF', '+/-']],
     body: tableData,
     theme: 'plain',
     styles: {

@@ -33,7 +33,7 @@ import {
   Building2
 } from 'lucide-react';
 import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, SEASONS, DEFAULT_SEASON, DEFAULT_MEMBERSHIP, UserMembership, UserRole, ClubMemberRole, ClubWorkspace } from './types';
-import { INITIAL_STATS, formatTime, formatDate, calculatePercentage } from './utils';
+import { INITIAL_STATS, formatTime, formatDate, calculatePercentage, getPlayerShifts } from './utils';
 import { exportMatchToPDF, exportSeasonStatsToPDF, exportPlayerMatchLogToPDF } from './pdfUtils';
 import { PlayerMatchStatsModal } from './components/PlayerMatchStatsModal';
 import { User } from 'firebase/auth';
@@ -1901,27 +1901,46 @@ export default function App() {
 
       const now = Date.now();
       if (p.isRunning) {
-        // Subbing out
+        // Subbing out: record finished shift
         let newTotalTime = p.totalTime;
         let newSessions = [...p.sessions];
+        let newShifts = [...(p.shifts || [])];
+        let shiftDuration = p.currentShiftDuration || 0;
+
         if (p.lastStartTime) {
           const duration = now - p.lastStartTime;
           newTotalTime += duration;
+          shiftDuration += duration;
           newSessions.push({ start: p.lastStartTime, end: now, duration });
         }
+
+        if (shiftDuration > 0) {
+          newShifts.push({
+            shiftNumber: newShifts.length + 1,
+            duration: shiftDuration,
+            startTime: p.currentShiftStartTime || (p.lastStartTime || now),
+            endTime: now
+          });
+        }
+
         return {
           ...p,
           isRunning: false,
           totalTime: newTotalTime,
           lastStartTime: null,
-          sessions: newSessions
+          sessions: newSessions,
+          shifts: newShifts,
+          currentShiftDuration: 0,
+          currentShiftStartTime: null
         };
       } else {
-        // Subbing in
+        // Subbing in: begin new shift
         return {
           ...p,
           isRunning: true,
-          lastStartTime: gameClockRunning ? now : null
+          lastStartTime: gameClockRunning ? now : null,
+          currentShiftDuration: 0,
+          currentShiftStartTime: now
         };
       }
     }));
@@ -1956,12 +1975,13 @@ export default function App() {
       if (!p.isRunning) return p;
 
       if (!newRunningState) {
-        // Pausing: save progress to totalTime and session slice if was running
+        // Pausing: save progress to totalTime and session slice and shift progress if was running
         if (p.lastStartTime) {
           const duration = now - p.lastStartTime;
           return {
             ...p,
             totalTime: p.totalTime + duration,
+            currentShiftDuration: (p.currentShiftDuration || 0) + duration,
             lastStartTime: null,
             sessions: [...p.sessions, { start: p.lastStartTime, end: now, duration }]
           };
@@ -1970,7 +1990,8 @@ export default function App() {
         // Resuming: start new timing reference
         return {
           ...p,
-          lastStartTime: now
+          lastStartTime: now,
+          currentShiftStartTime: p.currentShiftStartTime || now
         };
       }
       return p;
@@ -2286,6 +2307,9 @@ export default function App() {
         isRunning: isStarter,
         lastStartTime: null,
         sessions: [],
+        shifts: [],
+        currentShiftDuration: 0,
+        currentShiftStartTime: isStarter ? Date.now() : null,
         stats: { ...INITIAL_STATS },
         lastActions: []
       };
@@ -2302,14 +2326,27 @@ export default function App() {
     // Stop all running timers first
     const now = Date.now();
     const finalPlayers = players.map(p => {
-      if (p.isRunning && p.lastStartTime) {
-        const duration = now - p.lastStartTime;
+      if (p.isRunning) {
+        const added = p.lastStartTime ? (now - p.lastStartTime) : 0;
+        const finalShiftDuration = (p.currentShiftDuration || 0) + added;
+        const newShifts = [...(p.shifts || [])];
+        if (finalShiftDuration > 0) {
+          newShifts.push({
+            shiftNumber: newShifts.length + 1,
+            duration: finalShiftDuration,
+            startTime: p.currentShiftStartTime || (p.lastStartTime || now),
+            endTime: now
+          });
+        }
         return {
           ...p,
           isRunning: false,
-          totalTime: p.totalTime + duration,
+          totalTime: p.totalTime + added,
           lastStartTime: null,
-          sessions: [...p.sessions, { start: p.lastStartTime, end: now, duration }]
+          sessions: p.lastStartTime ? [...p.sessions, { start: p.lastStartTime, end: now, duration: added }] : p.sessions,
+          shifts: newShifts,
+          currentShiftDuration: 0,
+          currentShiftStartTime: null
         };
       }
       return p;
@@ -2373,6 +2410,9 @@ export default function App() {
           isRunning: isStarter,
           lastStartTime: null,
           sessions: [],
+          shifts: [],
+          currentShiftDuration: 0,
+          currentShiftStartTime: isStarter ? Date.now() : null,
           stats: { ...INITIAL_STATS },
           lastActions: []
         };
@@ -2393,6 +2433,9 @@ export default function App() {
       isRunning: false,
       lastStartTime: null,
       sessions: [],
+      shifts: [],
+      currentShiftDuration: 0,
+      currentShiftStartTime: null,
       stats: { ...INITIAL_STATS },
       lastActions: []
     })));
@@ -4794,7 +4837,10 @@ export default function App() {
                 <div className="space-y-4 sm:space-y-6">
                   <h4 className="text-lg sm:text-xl font-display font-black italic uppercase tracking-tighter text-white border-l-4 border-primary pl-4">Speler Statistieken</h4>
                   <div className="grid grid-cols-1 gap-3 sm:gap-4">
-                    {selectedMatch.players.map(player => (
+                    {selectedMatch.players.map(player => {
+                      const playerShifts = getPlayerShifts(player);
+
+                      return (
                       <div key={player.id} className="bg-white/5 p-3 sm:p-4 rounded-xl space-y-3 sm:space-y-4 border border-white/5">
                         <div className="flex justify-between items-center border-b border-white/5 pb-3 sm:pb-4">
                           <div className="flex items-center gap-2 sm:gap-3">
@@ -4802,7 +4848,14 @@ export default function App() {
                             <span className="font-bold text-base sm:text-lg truncate">{player.name}</span>
                             <span className="text-[9px] sm:text-xs text-text-muted bg-dark px-1.5 sm:px-2 py-0.5 rounded uppercase font-bold">{player.position}</span>
                           </div>
-                          <div className="text-lg sm:text-xl font-mono font-bold text-primary flex-shrink-0">{formatTime(player.totalTime)}</div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="text-lg sm:text-xl font-mono font-bold text-primary">{formatTime(player.totalTime)}</div>
+                            {playerShifts.length > 0 && (
+                              <div className="text-[10px] text-text-muted font-sans font-bold">
+                                {playerShifts.length} {playerShifts.length === 1 ? 'speelbeurt' : 'speelbeurten'}
+                              </div>
+                            )}
+                          </div>
                         </div>
                         
                         <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
@@ -4827,6 +4880,37 @@ export default function App() {
                           </div>
                         </div>
 
+                        {/* Speelbeurten breakdown */}
+                        {playerShifts.length > 0 && (
+                          <div className="bg-black/25 rounded-xl p-2.5 sm:p-3 border border-white/5 space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px] font-bold">
+                              <span className="flex items-center gap-1.5 text-primary uppercase tracking-wider">
+                                <Clock size={12} /> Speelbeurten ({playerShifts.length})
+                              </span>
+                              {playerShifts.length > 1 && (
+                                <span className="text-[10px] text-text-muted font-sans font-medium">
+                                  Gemiddelde beurtduur: <strong className="text-white font-mono">{formatTime(Math.round((player.totalTime || 0) / playerShifts.length))}</strong>
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 sm:gap-2 pt-0.5">
+                              {playerShifts.map((s, sIdx) => (
+                                <div 
+                                  key={sIdx}
+                                  className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 px-2.5 py-1 rounded-lg text-xs font-mono transition-colors shadow-sm"
+                                >
+                                  <span className="text-[10px] text-primary font-bold font-sans uppercase">
+                                    Beurt {s.shiftNumber || sIdx + 1}:
+                                  </span>
+                                  <span className="text-white font-bold font-mono">
+                                    {formatTime(s.duration)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5">
                           <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] text-text-muted font-mono">
                             <span><strong className="text-white">FG:</strong> {player.stats.fgm || 0}/{player.stats.fga || 0} ({calculatePercentage(player.stats.fgm || 0, player.stats.fga || 0)})</span>
@@ -4848,7 +4932,8 @@ export default function App() {
                           </button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -4864,6 +4949,7 @@ export default function App() {
             theme={theme}
             activeTeamId={activeTeamId}
             teams={teams}
+            teamPlayers={teamPlayers}
             onClose={() => setSelectedPlayerForStats(null)}
             onSelectPlayer={(p) => setSelectedPlayerForStats(p)}
             onOpenMatchDetail={(m) => {

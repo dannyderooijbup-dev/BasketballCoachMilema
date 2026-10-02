@@ -36,6 +36,14 @@ export interface PlayerAction {
   compound?: boolean; // To track if this was part of a 3P or FG increment
 }
 
+export interface PlayerShift {
+  shiftNumber: number;
+  duration: number; // Duration in milliseconds
+  period?: number;
+  startTime?: number;
+  endTime?: number;
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -45,6 +53,9 @@ export interface Player {
   isRunning: boolean;
   lastStartTime: number | null;
   sessions: Session[];
+  shifts?: PlayerShift[];
+  currentShiftDuration?: number;
+  currentShiftStartTime?: number | null;
   stats: Stats;
   lastActions: PlayerAction[];
   userId?: string;

@@ -44,6 +44,52 @@ export interface PlayerShift {
   endTime?: number;
 }
 
+export interface LineupStint {
+  id?: string;
+  playerIds: string[]; // sorted player IDs on the court
+  playerNames?: string[];
+  duration: number; // Duration in milliseconds
+  teamPoints: number;
+  opponentPoints: number;
+  plusMinus: number;
+  startTime?: number;
+  endTime?: number;
+}
+
+export interface LineupGroupStat {
+  key: string;
+  playerIds: string[];
+  players: { id: string; name: string; number: string; position?: string }[];
+  gamesCount: number;
+  totalTime: number;
+  teamPoints: number;
+  opponentPoints: number;
+  plusMinus: number;
+  netPer40: number;
+}
+
+export interface CombinationStats {
+  playerIds: string[];
+  players: { id: string; name: string; number: string; position?: string }[];
+  gamesCount: number;
+  totalTime: number;
+  teamPoints: number;
+  opponentPoints: number;
+  plusMinus: number;
+  netPer40: number;
+  matchBreakdown: {
+    matchId: string;
+    opponent: string;
+    date: number;
+    season?: string;
+    teamId?: string;
+    duration: number;
+    teamPoints: number;
+    opponentPoints: number;
+    plusMinus: number;
+  }[];
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -74,6 +120,7 @@ export interface MatchHistoryEntry {
   opponentScore?: number;
   teamScore?: number;
   season?: string;
+  lineupStints?: LineupStint[];
 }
 
 export const SEASONS = ['2026/2027', '2025/2026', '2024/2025'];

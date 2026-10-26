@@ -30,12 +30,14 @@ import {
   Clock,
   RefreshCw,
   ShieldCheck,
-  Building2
+  Building2,
+  Layers
 } from 'lucide-react';
-import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, SEASONS, DEFAULT_SEASON, DEFAULT_MEMBERSHIP, UserMembership, UserRole, ClubMemberRole, ClubWorkspace } from './types';
-import { INITIAL_STATS, formatTime, formatDate, calculatePercentage, getPlayerShifts } from './utils';
+import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, LineupStint, SEASONS, DEFAULT_SEASON, DEFAULT_MEMBERSHIP, UserMembership, UserRole, ClubMemberRole, ClubWorkspace } from './types';
+import { INITIAL_STATS, formatTime, formatDate, calculatePercentage, getPlayerShifts, getMatchLineupStints } from './utils';
 import { exportMatchToPDF, exportSeasonStatsToPDF, exportPlayerMatchLogToPDF } from './pdfUtils';
 import { PlayerMatchStatsModal } from './components/PlayerMatchStatsModal';
+import { LineupCombinationView } from './components/LineupCombinationView';
 import { User } from 'firebase/auth';
 import { 
   doc, 
@@ -298,10 +300,23 @@ export default function App() {
   const [selectedMatch, setSelectedMatch] = useState<MatchHistoryEntry | null>(null);
   const [selectedPlayerForStats, setSelectedPlayerForStats] = useState<{ id?: string; name: string; number: string; position?: string } | null>(null);
   const [detailSeason, setDetailSeason] = useState<string>('2026/2027');
+  const [seasonSubTab, setSeasonSubTab] = useState<'players' | 'combinations'>('players');
+  const [matchDetailSubTab, setMatchDetailSubTab] = useState<'players' | 'combinations'>('players');
+
+  // Lineup tracking during matches
+  const [matchLineupStints, setMatchLineupStints] = useState<LineupStint[]>([]);
+  const [currentLineupStint, setCurrentLineupStint] = useState<{
+    playerIds: string[];
+    duration: number;
+    teamPoints: number;
+    opponentPoints: number;
+    startTime: number | null;
+  } | null>(null);
 
   useEffect(() => {
     if (selectedMatch) {
       setDetailSeason(selectedMatch.season || '2026/2027');
+      setMatchDetailSubTab('players');
     }
   }, [selectedMatch]);
   const [selectedStarters, setSelectedStarters] = useState<string[]>([]);
@@ -1896,54 +1911,98 @@ export default function App() {
   };
 
   const toggleTimer = (id: string) => {
-    setPlayers(prev => prev.map(p => {
-      if (p.id !== id) return p;
+    const now = Date.now();
+    setPlayers(prev => {
+      const nextPlayers = prev.map(p => {
+        if (p.id !== id) return p;
 
-      const now = Date.now();
-      if (p.isRunning) {
-        // Subbing out: record finished shift
-        let newTotalTime = p.totalTime;
-        let newSessions = [...p.sessions];
-        let newShifts = [...(p.shifts || [])];
-        let shiftDuration = p.currentShiftDuration || 0;
+        if (p.isRunning) {
+          // Subbing out: record finished shift
+          let newTotalTime = p.totalTime;
+          let newSessions = [...p.sessions];
+          let newShifts = [...(p.shifts || [])];
+          let shiftDuration = p.currentShiftDuration || 0;
 
-        if (p.lastStartTime) {
-          const duration = now - p.lastStartTime;
-          newTotalTime += duration;
-          shiftDuration += duration;
-          newSessions.push({ start: p.lastStartTime, end: now, duration });
+          if (p.lastStartTime) {
+            const duration = now - p.lastStartTime;
+            newTotalTime += duration;
+            shiftDuration += duration;
+            newSessions.push({ start: p.lastStartTime, end: now, duration });
+          }
+
+          if (shiftDuration > 0) {
+            newShifts.push({
+              shiftNumber: newShifts.length + 1,
+              duration: shiftDuration,
+              startTime: p.currentShiftStartTime || (p.lastStartTime || now),
+              endTime: now
+            });
+          }
+
+          return {
+            ...p,
+            isRunning: false,
+            totalTime: newTotalTime,
+            lastStartTime: null,
+            sessions: newSessions,
+            shifts: newShifts,
+            currentShiftDuration: 0,
+            currentShiftStartTime: null
+          };
+        } else {
+          // Subbing in: begin new shift
+          return {
+            ...p,
+            isRunning: true,
+            lastStartTime: gameClockRunning ? now : null,
+            currentShiftDuration: 0,
+            currentShiftStartTime: now
+          };
         }
+      });
 
-        if (shiftDuration > 0) {
-          newShifts.push({
-            shiftNumber: newShifts.length + 1,
-            duration: shiftDuration,
-            startTime: p.currentShiftStartTime || (p.lastStartTime || now),
-            endTime: now
-          });
+      // Update lineup stints:
+      const nextActiveIds = nextPlayers.filter(p => p.isRunning).map(p => p.id).sort();
+
+      setCurrentLineupStint(curr => {
+        if (curr) {
+          const elapsed = (curr.startTime && gameClockRunning) ? (now - curr.startTime) : 0;
+          const totalDuration = curr.duration + elapsed;
+          const teamPts = curr.teamPoints;
+          const oppPts = curr.opponentPoints;
+
+          if (totalDuration > 0 || teamPts > 0 || oppPts > 0) {
+            setMatchLineupStints(lPrev => [
+              ...lPrev,
+              {
+                id: generateId(),
+                playerIds: curr.playerIds,
+                playerNames: curr.playerIds.map(pId => {
+                  const pl = prev.find(x => x.id === pId);
+                  return pl ? `#${pl.number} ${pl.name}` : pId;
+                }),
+                duration: totalDuration,
+                teamPoints: teamPts,
+                opponentPoints: oppPts,
+                plusMinus: teamPts - oppPts,
+                startTime: curr.startTime || now,
+                endTime: now
+              }
+            ]);
+          }
         }
 
         return {
-          ...p,
-          isRunning: false,
-          totalTime: newTotalTime,
-          lastStartTime: null,
-          sessions: newSessions,
-          shifts: newShifts,
-          currentShiftDuration: 0,
-          currentShiftStartTime: null
+          playerIds: nextActiveIds,
+          duration: 0,
+          teamPoints: 0,
+          opponentPoints: 0,
+          startTime: gameClockRunning ? now : null
         };
-      } else {
-        // Subbing in: begin new shift
-        return {
-          ...p,
-          isRunning: true,
-          lastStartTime: gameClockRunning ? now : null,
-          currentShiftDuration: 0,
-          currentShiftStartTime: now
-        };
-      }
-    }));
+      });
+
+      return nextPlayers;
+    });
   };
 
   const toggleGameClock = () => {
@@ -1967,8 +2026,20 @@ export default function App() {
         }));
         setMatchClockStartTime(null);
       }
+      // Clock paused: accumulate duration to current lineup stint
+      setCurrentLineupStint(prev => {
+        if (!prev) return null;
+        const elapsed = prev.startTime ? (now - prev.startTime) : 0;
+        return {
+          ...prev,
+          duration: prev.duration + elapsed,
+          startTime: null
+        };
+      });
     } else {
       setMatchClockStartTime(now);
+      // Clock started: set start timestamp
+      setCurrentLineupStint(prev => prev ? { ...prev, startTime: now } : null);
     }
 
     setPlayers(prev => prev.map(p => {
@@ -2014,6 +2085,12 @@ export default function App() {
             stats: newStats
           };
         }));
+
+        // Track opponent points in current lineup stint
+        setCurrentLineupStint(lPrev => lPrev ? {
+          ...lPrev,
+          opponentPoints: Math.max(0, lPrev.opponentPoints + actualChange)
+        } : null);
       }
 
       return nextScore;
@@ -2108,6 +2185,14 @@ export default function App() {
       };
     }));
 
+    // Update points in current active lineup stint
+    if (pointsScored !== 0) {
+      setCurrentLineupStint(curr => curr ? {
+        ...curr,
+        teamPoints: curr.teamPoints + pointsScored
+      } : null);
+    }
+
     // Add to global action log
     const newAction = {
       actionId: generateId(),
@@ -2152,6 +2237,13 @@ export default function App() {
           stats: newStats
         };
       }));
+
+      if (pointsScored !== 0) {
+        setCurrentLineupStint(curr => curr ? {
+          ...curr,
+          teamPoints: Math.max(0, curr.teamPoints - pointsScored)
+        } : null);
+      }
 
       return updated;
     });
@@ -2314,6 +2406,18 @@ export default function App() {
         lastActions: []
       };
     }));
+
+    // Initialize lineup stints with the 5 starters
+    const sortedStarters = [...selectedStarters].sort();
+    setMatchLineupStints([]);
+    setCurrentLineupStint({
+      playerIds: sortedStarters,
+      duration: 0,
+      teamPoints: 0,
+      opponentPoints: 0,
+      startTime: null
+    });
+
     setIsMatchActive(true);
     setCurrentPeriod(1);
     setPeriodElapsed({ 1: 0, 2: 0, 3: 0, 4: 0 });
@@ -2370,6 +2474,29 @@ export default function App() {
 
     const teamScore = matchSpecificPlayers.reduce((sum, p) => sum + (p.stats.points || 0), 0);
 
+    // Finalize any active lineup stint and save all stints with this match
+    let finalLineupStints: LineupStint[] = [...matchLineupStints];
+    if (currentLineupStint) {
+      const elapsed = (currentLineupStint.startTime && gameClockRunning) ? (now - currentLineupStint.startTime) : 0;
+      const totalDur = currentLineupStint.duration + elapsed;
+      if (totalDur > 0 || currentLineupStint.teamPoints > 0 || currentLineupStint.opponentPoints > 0) {
+        finalLineupStints.push({
+          id: generateId(),
+          playerIds: currentLineupStint.playerIds,
+          playerNames: currentLineupStint.playerIds.map(pId => {
+            const pl = players.find(x => x.id === pId);
+            return pl ? `#${pl.number} ${pl.name}` : pId;
+          }),
+          duration: totalDur,
+          teamPoints: currentLineupStint.teamPoints,
+          opponentPoints: currentLineupStint.opponentPoints,
+          plusMinus: currentLineupStint.teamPoints - currentLineupStint.opponentPoints,
+          startTime: currentLineupStint.startTime || now,
+          endTime: now
+        });
+      }
+    }
+
     const newEntry: MatchHistoryEntry = {
       matchId: generateId(),
       date: now,
@@ -2380,7 +2507,8 @@ export default function App() {
       teamId: matchTeamId || undefined,
       teamScore,
       opponentScore,
-      season: matchSeason
+      season: matchSeason,
+      lineupStints: finalLineupStints
     };
 
     setHistory([newEntry, ...history]);
@@ -2397,10 +2525,17 @@ export default function App() {
     setSelectedStarters([]);
     setOpponent('');
     setOpponentScore(0);
+    setMatchLineupStints([]);
+    setCurrentLineupStint(null);
   };
 
   const clearMatchStats = () => {
     if (confirm('Weet je zeker dat je alle statistieken van de huidige wedstrijd wilt wissen? Dit kan niet ongedaan worden gemaakt.')) {
+      const starterIds = players
+        .filter(p => currentStarting5.some(nameStr => nameStr.startsWith(`#${p.number} `)))
+        .map(p => p.id)
+        .sort();
+
       setPlayers(prev => prev.map(p => {
         // Reset current stats but keep players and put original starting 5 back on-court
         const isStarter = currentStarting5.some(nameStr => nameStr.startsWith(`#${p.number} `));
@@ -2417,6 +2552,16 @@ export default function App() {
           lastActions: []
         };
       }));
+
+      setMatchLineupStints([]);
+      setCurrentLineupStint({
+        playerIds: starterIds,
+        duration: 0,
+        teamPoints: 0,
+        opponentPoints: 0,
+        startTime: null
+      });
+
       setGameClockRunning(false);
       setCurrentPeriod(1);
       setPeriodElapsed({ 1: 0, 2: 0, 3: 0, 4: 0 });
@@ -2449,6 +2594,8 @@ export default function App() {
     setSelectedStarters([]);
     setOpponent('');
     setOpponentScore(0);
+    setMatchLineupStints([]);
+    setCurrentLineupStint(null);
   };
 
   const getNameFontSize = (name: string) => {
@@ -3831,228 +3978,263 @@ export default function App() {
             )}
           </div>
         </div>
-        {stats.length > 0 && (() => {
-          const total3Fgm = stats.reduce((sum, s: any) => sum + (s.threeFgm || 0), 0);
-          const total3Fga = stats.reduce((sum, s: any) => sum + (s.threeFga || 0), 0);
-          const totalFtm = stats.reduce((sum, s: any) => sum + (s.ftm || 0), 0);
-          const totalFta = stats.reduce((sum, s: any) => sum + (s.fta || 0), 0);
-          const totalFgm = stats.reduce((sum, s: any) => sum + (s.fgm || 0), 0);
-          const totalFga = stats.reduce((sum, s: any) => sum + (s.fga || 0), 0);
-          const totalMatchesCount = Math.max(...stats.map((s: any) => s.matches || 0), 0);
 
-          return (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="bg-surface/60 border border-white/10 rounded-2xl p-3.5 backdrop-blur-sm shadow-sm">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">3-Punters (3P)</span>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-xl sm:text-2xl font-mono font-black text-primary">{calculatePercentage(total3Fgm, total3Fga)}</span>
-                  <span className="text-xs sm:text-sm font-mono font-bold text-white">{total3Fgm}/{total3Fga}</span>
-                </div>
-                <span className="text-[10px] text-text-muted mt-0.5 block">
-                  {total3Fgm} raak van {total3Fga} genomen {totalMatchesCount > 0 ? `(${(total3Fgm / totalMatchesCount).toFixed(1)}/w)` : ''}
-                </span>
-              </div>
+        {/* Sub-tab navigatie: Individuele Spelers vs Combinaties & Opstellingen (+/-) */}
+        <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+          <button
+            onClick={() => setSeasonSubTab('individual')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold uppercase transition-all flex items-center gap-2 cursor-pointer ${
+              seasonSubTab === 'individual'
+                ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                : 'bg-white/5 text-text-muted hover:text-white'
+            }`}
+          >
+            <Users size={16} /> Individuele Spelers
+          </button>
+          <button
+            onClick={() => setSeasonSubTab('combinations')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold uppercase transition-all flex items-center gap-2 cursor-pointer ${
+              seasonSubTab === 'combinations'
+                ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                : 'bg-white/5 text-text-muted hover:text-white'
+            }`}
+          >
+            <Layers size={16} /> Combinaties & Opstellingen (+/-)
+          </button>
+        </div>
 
-              <div className="bg-surface/60 border border-white/10 rounded-2xl p-3.5 backdrop-blur-sm shadow-sm">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">Vrije Worpen (FT)</span>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-xl sm:text-2xl font-mono font-black text-primary">{calculatePercentage(totalFtm, totalFta)}</span>
-                  <span className="text-xs sm:text-sm font-mono font-bold text-white">{totalFtm}/{totalFta}</span>
-                </div>
-                <span className="text-[10px] text-text-muted mt-0.5 block">
-                  {totalFtm} raak van {totalFta} genomen {totalMatchesCount > 0 ? `(${(totalFtm / totalMatchesCount).toFixed(1)}/w)` : ''}
-                </span>
-              </div>
+        {seasonSubTab === 'combinations' ? (
+          <LineupCombinationView
+            matches={filteredMatchesForPDF}
+            allPlayers={players}
+            title={`Seizoensopstellingen & Combinaties (+/-) — ${seasonTabSeasonFilter === 'All' ? 'Alle Seizoenen' : seasonTabSeasonFilter}`}
+          />
+        ) : (
+          <>
+            {stats.length > 0 && (() => {
+              const total3Fgm = stats.reduce((sum, s: any) => sum + (s.threeFgm || 0), 0);
+              const total3Fga = stats.reduce((sum, s: any) => sum + (s.threeFga || 0), 0);
+              const totalFtm = stats.reduce((sum, s: any) => sum + (s.ftm || 0), 0);
+              const totalFta = stats.reduce((sum, s: any) => sum + (s.fta || 0), 0);
+              const totalFgm = stats.reduce((sum, s: any) => sum + (s.fgm || 0), 0);
+              const totalFga = stats.reduce((sum, s: any) => sum + (s.fga || 0), 0);
+              const totalMatchesCount = Math.max(...stats.map((s: any) => s.matches || 0), 0);
 
-              <div className="bg-surface/60 border border-white/10 rounded-2xl p-3.5 backdrop-blur-sm shadow-sm">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">Veldscores (FG)</span>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-xl sm:text-2xl font-mono font-black text-white">{calculatePercentage(totalFgm, totalFga)}</span>
-                  <span className="text-xs sm:text-sm font-mono font-bold text-white/90">{totalFgm}/{totalFga}</span>
-                </div>
-                <span className="text-[10px] text-text-muted mt-0.5 block">
-                  {totalFgm} raak van {totalFga} genomen
-                </span>
-              </div>
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-surface/60 border border-white/10 rounded-2xl p-3.5 backdrop-blur-sm shadow-sm">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">3-Punters (3P)</span>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-xl sm:text-2xl font-mono font-black text-primary">{calculatePercentage(total3Fgm, total3Fga)}</span>
+                      <span className="text-xs sm:text-sm font-mono font-bold text-white">{total3Fgm}/{total3Fga}</span>
+                    </div>
+                    <span className="text-[10px] text-text-muted mt-0.5 block">
+                      {total3Fgm} raak van {total3Fga} genomen {totalMatchesCount > 0 ? `(${(total3Fgm / totalMatchesCount).toFixed(1)}/w)` : ''}
+                    </span>
+                  </div>
 
-              <div className="bg-surface/60 border border-white/10 rounded-2xl p-3.5 backdrop-blur-sm shadow-sm">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">Schot Rendement</span>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-xl sm:text-2xl font-mono font-black text-amber-400">
-                    {totalFga > 0 ? (((totalFgm + 0.5 * total3Fgm) / totalFga) * 100).toFixed(1) + '%' : '0%'}
-                  </span>
-                  <span className="text-[10px] font-bold uppercase text-text-muted">eFG%</span>
+                  <div className="bg-surface/60 border border-white/10 rounded-2xl p-3.5 backdrop-blur-sm shadow-sm">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">Vrije Worpen (FT)</span>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-xl sm:text-2xl font-mono font-black text-primary">{calculatePercentage(totalFtm, totalFta)}</span>
+                      <span className="text-xs sm:text-sm font-mono font-bold text-white">{totalFtm}/{totalFta}</span>
+                    </div>
+                    <span className="text-[10px] text-text-muted mt-0.5 block">
+                      {totalFtm} raak van {totalFta} genomen {totalMatchesCount > 0 ? `(${(totalFtm / totalMatchesCount).toFixed(1)}/w)` : ''}
+                    </span>
+                  </div>
+
+                  <div className="bg-surface/60 border border-white/10 rounded-2xl p-3.5 backdrop-blur-sm shadow-sm">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">Veldscores (FG)</span>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-xl sm:text-2xl font-mono font-black text-white">{calculatePercentage(totalFgm, totalFga)}</span>
+                      <span className="text-xs sm:text-sm font-mono font-bold text-white/90">{totalFgm}/{totalFga}</span>
+                    </div>
+                    <span className="text-[10px] text-text-muted mt-0.5 block">
+                      {totalFgm} raak van {totalFga} genomen
+                    </span>
+                  </div>
+
+                  <div className="bg-surface/60 border border-white/10 rounded-2xl p-3.5 backdrop-blur-sm shadow-sm">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">Schot Rendement</span>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-xl sm:text-2xl font-mono font-black text-amber-400">
+                        {totalFga > 0 ? (((totalFgm + 0.5 * total3Fgm) / totalFga) * 100).toFixed(1) + '%' : '0%'}
+                      </span>
+                      <span className="text-[10px] font-bold uppercase text-text-muted">eFG%</span>
+                    </div>
+                    <span className="text-[10px] text-text-muted mt-0.5 block">
+                      Effectief velddoelpunt percentage
+                    </span>
+                  </div>
                 </div>
-                <span className="text-[10px] text-text-muted mt-0.5 block">
-                  Effectief velddoelpunt percentage
+              );
+            })()}
+            <div className="flex items-center justify-between gap-3 bg-primary/10 border border-primary/20 text-white text-xs px-4 py-3 rounded-2xl">
+              <div className="flex items-center gap-2.5">
+                <Activity size={18} className="text-primary shrink-0" />
+                <span>
+                  <strong className="text-primary font-bold">Details per speler bekijken:</strong> Klik op een speler in de tabel of op de &quot;Details&quot;-knop om alle wedstrijden, speelminuten en statistieken per wedstrijd te bekijken.
                 </span>
               </div>
             </div>
-          );
-        })()}
-        <div className="flex items-center justify-between gap-3 bg-primary/10 border border-primary/20 text-white text-xs px-4 py-3 rounded-2xl">
-          <div className="flex items-center gap-2.5">
-            <Activity size={18} className="text-primary shrink-0" />
-            <span>
-              <strong className="text-primary font-bold">Details per speler bekijken:</strong> Klik op een speler in de tabel of op de &quot;Details&quot;-knop om alle wedstrijden, speelminuten en statistieken per wedstrijd te bekijken.
-            </span>
-          </div>
-        </div>
-        <div className={`overflow-hidden rounded-2xl sm:rounded-3xl border shadow-2xl transition-colors ${getTeamBgColorClass(activeTeamId)}`}>
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-left border-collapse min-w-[900px]">
-              <thead>
-                <tr className="bg-white/5 text-[9px] sm:text-[10px] uppercase tracking-widest text-text-muted border-b border-white/5 font-bold italic">
-                  <th className="px-3 sm:px-4 py-3 sm:py-4 sticky left-0 sm:relative sm:bg-transparent z-10 transition-colors ${getTeamStickyBgColorClass(activeTeamId)}">Speler</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4">W</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4">Tijd AVG</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4">PTN AVG</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4" title="Veldscores: percentage en gemaakt / genomen">FG% (M/A)</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4" title="Driepunters: percentage en gemaakt / genomen">3P% (M/A)</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4" title="Vrije worpen: percentage en gemaakt / genomen">FT% (M/A)</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">REB</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">DEF REB</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">OFF REB</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">AST</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">STL</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">BLK</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">TO</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">PF</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-right font-display font-black text-primary">+/-</th>
-                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-center">Wedstrijden</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.map((s: any) => (
-                  <tr 
-                    key={s.name} 
-                    onClick={() => setSelectedPlayerForStats({ id: s.id, name: s.name, number: s.number, position: s.position })}
-                    className="border-b border-white/5 hover:bg-white/10 transition-colors cursor-pointer group"
-                    title={`Klik om alle wedstrijden van ${s.name} te bekijken`}
-                  >
-                    <td className={`px-3 sm:px-4 py-3 sm:py-4 sticky left-0 sm:relative sm:bg-transparent z-10 transition-colors ${getTeamStickyBgColorClass(activeTeamId)}`}>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-primary">#{s.number}</span>
-                        <span className="font-medium text-xs sm:text-sm whitespace-nowrap group-hover:text-primary transition-colors">{s.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{s.matches || 0}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{formatTime(s.matches > 0 ? s.totalTime / s.matches : 0)}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-bold text-primary text-xs sm:text-sm">{s.matches > 0 ? (s.points / s.matches).toFixed(1) : '0.0'}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Veldscores: ${s.fgm || 0} gemaakt van ${s.fga || 0} genomen (${calculatePercentage(s.fgm, s.fga)})`}>
-                      <span className="font-bold text-white">{calculatePercentage(s.fgm, s.fga)}</span>
-                      <span className="text-[10px] text-text-muted ml-1.5 font-normal">({s.fgm || 0}/{s.fga || 0})</span>
-                    </td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Driepunters: ${s.threeFgm || 0} gemaakt van ${s.threeFga || 0} genomen (${calculatePercentage(s.threeFgm, s.threeFga)})`}>
-                      <span className="font-bold text-white">{calculatePercentage(s.threeFgm, s.threeFga)}</span>
-                      <span className="text-[10px] text-text-muted ml-1.5 font-normal">({s.threeFgm || 0}/{s.threeFga || 0})</span>
-                    </td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Vrije worpen: ${s.ftm || 0} gemaakt van ${s.fta || 0} genomen (${calculatePercentage(s.ftm, s.fta)})`}>
-                      <span className="font-bold text-white">{calculatePercentage(s.ftm, s.fta)}</span>
-                      <span className="text-[10px] text-text-muted ml-1.5 font-normal">({s.ftm || 0}/{s.fta || 0})</span>
-                    </td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.rebounds / s.matches).toFixed(1) : '0.0'}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? ((s.defReb || 0) / s.matches).toFixed(1) : '0.0'}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? ((s.offReb || 0) / s.matches).toFixed(1) : '0.0'}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.assists / s.matches).toFixed(1) : '0.0'}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.steals / s.matches).toFixed(1) : '0.0'}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.blocks / s.matches).toFixed(1) : '0.0'}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.turnovers / s.matches).toFixed(1) : '0.0'}</td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right font-semibold text-red-400">{s.matches > 0 ? (s.pf / s.matches).toFixed(1) : '0.0'}</td>
-                    <td className={`px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right font-bold ${s.plusMinus > 0 ? 'text-green-400' : s.plusMinus < 0 ? 'text-red-400' : 'text-white'}`}>
-                      {s.plusMinus > 0 ? `+${s.plusMinus}` : s.plusMinus}
-                    </td>
-                    <td className="px-3 sm:px-4 py-3 sm:py-4 text-center whitespace-nowrap">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedPlayerForStats({ id: s.id, name: s.name, number: s.number, position: s.position });
-                        }}
-                        className="inline-flex items-center gap-1 bg-primary/15 group-hover:bg-primary text-primary group-hover:text-white px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition-all shadow-sm active:scale-95"
-                        title={`Bekijk alle wedstrijden van ${s.name}`}
-                      >
-                        Details <ChevronRight size={11} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-
-                {stats.length > 0 && (() => {
-                  let totalW = stats.length > 0 ? Math.max(...stats.map((s: any) => s.matches || 0)) : 0;
-                  let totalTime = stats.reduce((sum, s) => sum + (s.totalTime || 0), 0);
-                  let totalPoints = stats.reduce((sum, s) => sum + (s.points || 0), 0);
-                  let totalFgm = stats.reduce((sum, s) => sum + (s.fgm || 0), 0);
-                  let totalFga = stats.reduce((sum, s) => sum + (s.fga || 0), 0);
-                  let total3Fgm = stats.reduce((sum, s) => sum + (s.threeFgm || 0), 0);
-                  let total3Fga = stats.reduce((sum, s) => sum + (s.threeFga || 0), 0);
-                  let totalFtm = stats.reduce((sum, s) => sum + (s.ftm || 0), 0);
-                  let totalFta = stats.reduce((sum, s) => sum + (s.fta || 0), 0);
-                  let totalRebounds = stats.reduce((sum, s) => sum + (s.rebounds || 0), 0);
-                  let totalDefReb = stats.reduce((sum, s) => sum + (s.defReb || 0), 0);
-                  let totalOffReb = stats.reduce((sum, s) => sum + (s.offReb || 0), 0);
-                  let totalAssists = stats.reduce((sum, s) => sum + (s.assists || 0), 0);
-                  let totalSteals = stats.reduce((sum, s) => sum + (s.steals || 0), 0);
-                  let totalBlocks = stats.reduce((sum, s) => sum + (s.blocks || 0), 0);
-                  let totalTurnovers = stats.reduce((sum, s) => sum + (s.turnovers || 0), 0);
-                  let totalPf = stats.reduce((sum, s) => sum + (s.pf || 0), 0);
-                  const filteredMatches = activeTeamId === 'all' 
-                    ? history 
-                    : history.filter(m => m.teamId === activeTeamId);
-                  let totalPlusMinus = filteredMatches.reduce((sum, m) => sum + ((m.teamScore ?? 0) - (m.opponentScore ?? 0)), 0);
-
-                  return (
-                    <tr className="bg-primary/15 border-t border-primary/30 font-bold text-white relative z-10">
-                      <td className={`px-3 sm:px-4 py-4 sticky left-0 sm:relative sm:bg-transparent z-10 transition-colors ${activeTeamId === 'all' ? 'bg-[#231710]' : getTeamStickyBgColorClass(activeTeamId)}`}>
-                        <div className="flex items-center gap-2">
-                          <span className="font-display font-black text-primary">TEAM</span>
-                          <span className="font-display font-black uppercase text-xs sm:text-sm whitespace-nowrap text-primary">TOTAAL</span>
-                        </div>
-                      </td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-primary">{totalW}</td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-primary">{formatTime(totalW > 0 ? totalTime / totalW : 0)}</td>
-                      <td className="px-3 sm:px-4 py-4 font-bold text-primary font-mono text-[11px] sm:text-sm">
-                        {totalW > 0 ? (totalPoints / totalW).toFixed(1) : '0.0'}
-                      </td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Team veldscores: ${totalFgm} gemaakt van ${totalFga} genomen`}>
-                        <span className="font-bold text-white">{calculatePercentage(totalFgm, totalFga)}</span>
-                        <span className="text-[10px] text-text-muted ml-1.5 font-normal">({totalFgm}/{totalFga})</span>
-                      </td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Team 3-punters: ${total3Fgm} gemaakt van ${total3Fga} genomen`}>
-                        <span className="font-bold text-white">{calculatePercentage(total3Fgm, total3Fga)}</span>
-                        <span className="text-[10px] text-text-muted ml-1.5 font-normal">({total3Fgm}/{total3Fga})</span>
-                      </td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Team vrije worpen: ${totalFtm} gemaakt van ${totalFta} genomen`}>
-                        <span className="font-bold text-white">{calculatePercentage(totalFtm, totalFta)}</span>
-                        <span className="text-[10px] text-text-muted ml-1.5 font-normal">({totalFtm}/{totalFta})</span>
-                      </td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalRebounds / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalDefReb / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalOffReb / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalAssists / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalSteals / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalBlocks / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalTurnovers / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
-                      <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-red-300 font-bold">{totalW > 0 ? (totalPf / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-red-300/80 font-normal italic">avg</span></td>
-                      <td className={`px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right font-bold ${totalPlusMinus > 0 ? 'text-green-400' : totalPlusMinus < 0 ? 'text-red-400' : 'text-white'}`}>
-                        {totalPlusMinus > 0 ? `+${totalPlusMinus}` : totalPlusMinus}
-                      </td>
-                      <td className="px-3 sm:px-4 py-4 text-center"></td>
+            <div className={`overflow-hidden rounded-2xl sm:rounded-3xl border shadow-2xl transition-colors ${getTeamBgColorClass(activeTeamId)}`}>
+              <div className="overflow-x-auto scrollbar-thin">
+                <table className="w-full text-left border-collapse min-w-[900px]">
+                  <thead>
+                    <tr className="bg-white/5 text-[9px] sm:text-[10px] uppercase tracking-widest text-text-muted border-b border-white/5 font-bold italic">
+                      <th className="px-3 sm:px-4 py-3 sm:py-4 sticky left-0 sm:relative sm:bg-transparent z-10 transition-colors ${getTeamStickyBgColorClass(activeTeamId)}">Speler</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4">W</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4">Tijd AVG</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4">PTN AVG</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4" title="Veldscores: percentage en gemaakt / genomen">FG% (M/A)</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4" title="Driepunters: percentage en gemaakt / genomen">3P% (M/A)</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4" title="Vrije worpen: percentage en gemaakt / genomen">FT% (M/A)</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">REB</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">DEF REB</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">OFF REB</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">AST</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">STL</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">BLK</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">TO</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4 text-right">PF</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4 text-right font-display font-black text-primary">+/-</th>
+                      <th className="px-3 sm:px-4 py-3 sm:py-4 text-center">Wedstrijden</th>
                     </tr>
-                  );
-                })()}
+                  </thead>
+                  <tbody>
+                    {stats.map((s: any) => (
+                      <tr 
+                        key={s.name} 
+                        onClick={() => setSelectedPlayerForStats({ id: s.id, name: s.name, number: s.number, position: s.position })}
+                        className="border-b border-white/5 hover:bg-white/10 transition-colors cursor-pointer group"
+                        title={`Klik om alle wedstrijden van ${s.name} te bekijken`}
+                      >
+                        <td className={`px-3 sm:px-4 py-3 sm:py-4 sticky left-0 sm:relative sm:bg-transparent z-10 transition-colors ${getTeamStickyBgColorClass(activeTeamId)}`}>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-primary">#{s.number}</span>
+                            <span className="font-medium text-xs sm:text-sm whitespace-nowrap group-hover:text-primary transition-colors">{s.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{s.matches || 0}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm">{formatTime(s.matches > 0 ? s.totalTime / s.matches : 0)}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-bold text-primary text-xs sm:text-sm">{s.matches > 0 ? (s.points / s.matches).toFixed(1) : '0.0'}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Veldscores: ${s.fgm || 0} gemaakt van ${s.fga || 0} genomen (${calculatePercentage(s.fgm, s.fga)})`}>
+                          <span className="font-bold text-white">{calculatePercentage(s.fgm, s.fga)}</span>
+                          <span className="text-[10px] text-text-muted ml-1.5 font-normal">({s.fgm || 0}/{s.fga || 0})</span>
+                        </td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Driepunters: ${s.threeFgm || 0} gemaakt van ${s.threeFga || 0} genomen (${calculatePercentage(s.threeFgm, s.threeFga)})`}>
+                          <span className="font-bold text-white">{calculatePercentage(s.threeFgm, s.threeFga)}</span>
+                          <span className="text-[10px] text-text-muted ml-1.5 font-normal">({s.threeFgm || 0}/{s.threeFga || 0})</span>
+                        </td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Vrije worpen: ${s.ftm || 0} gemaakt van ${s.fta || 0} genomen (${calculatePercentage(s.ftm, s.fta)})`}>
+                          <span className="font-bold text-white">{calculatePercentage(s.ftm, s.fta)}</span>
+                          <span className="text-[10px] text-text-muted ml-1.5 font-normal">({s.ftm || 0}/{s.fta || 0})</span>
+                        </td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.rebounds / s.matches).toFixed(1) : '0.0'}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? ((s.defReb || 0) / s.matches).toFixed(1) : '0.0'}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? ((s.offReb || 0) / s.matches).toFixed(1) : '0.0'}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.assists / s.matches).toFixed(1) : '0.0'}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.steals / s.matches).toFixed(1) : '0.0'}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.blocks / s.matches).toFixed(1) : '0.0'}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right">{s.matches > 0 ? (s.turnovers / s.matches).toFixed(1) : '0.0'}</td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right font-semibold text-red-400">{s.matches > 0 ? (s.pf / s.matches).toFixed(1) : '0.0'}</td>
+                        <td className={`px-3 sm:px-4 py-3 sm:py-4 font-mono text-[11px] sm:text-sm text-right font-bold ${s.plusMinus > 0 ? 'text-green-400' : s.plusMinus < 0 ? 'text-red-400' : 'text-white'}`}>
+                          {s.plusMinus > 0 ? `+${s.plusMinus}` : s.plusMinus}
+                        </td>
+                        <td className="px-3 sm:px-4 py-3 sm:py-4 text-center whitespace-nowrap">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedPlayerForStats({ id: s.id, name: s.name, number: s.number, position: s.position });
+                            }}
+                            className="inline-flex items-center gap-1 bg-primary/15 group-hover:bg-primary text-primary group-hover:text-white px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition-all shadow-sm active:scale-95"
+                            title={`Bekijk alle wedstrijden van ${s.name}`}
+                          >
+                            Details <ChevronRight size={11} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
 
-                {stats.length === 0 && (
-                  <tr>
-                    <td colSpan={17} className="py-20 text-center text-text-muted">Geen data beschikbaar</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-    </div>
-  );
-};
+                    {stats.length > 0 && (() => {
+                      let totalW = stats.length > 0 ? Math.max(...stats.map((s: any) => s.matches || 0)) : 0;
+                      let totalTime = stats.reduce((sum, s) => sum + (s.totalTime || 0), 0);
+                      let totalPoints = stats.reduce((sum, s) => sum + (s.points || 0), 0);
+                      let totalFgm = stats.reduce((sum, s) => sum + (s.fgm || 0), 0);
+                      let totalFga = stats.reduce((sum, s) => sum + (s.fga || 0), 0);
+                      let total3Fgm = stats.reduce((sum, s) => sum + (s.threeFgm || 0), 0);
+                      let total3Fga = stats.reduce((sum, s) => sum + (s.threeFga || 0), 0);
+                      let totalFtm = stats.reduce((sum, s) => sum + (s.ftm || 0), 0);
+                      let totalFta = stats.reduce((sum, s) => sum + (s.fta || 0), 0);
+                      let totalRebounds = stats.reduce((sum, s) => sum + (s.rebounds || 0), 0);
+                      let totalDefReb = stats.reduce((sum, s) => sum + (s.defReb || 0), 0);
+                      let totalOffReb = stats.reduce((sum, s) => sum + (s.offReb || 0), 0);
+                      let totalAssists = stats.reduce((sum, s) => sum + (s.assists || 0), 0);
+                      let totalSteals = stats.reduce((sum, s) => sum + (s.steals || 0), 0);
+                      let totalBlocks = stats.reduce((sum, s) => sum + (s.blocks || 0), 0);
+                      let totalTurnovers = stats.reduce((sum, s) => sum + (s.turnovers || 0), 0);
+                      let totalPf = stats.reduce((sum, s) => sum + (s.pf || 0), 0);
+                      const filteredMatches = activeTeamId === 'all' 
+                        ? history 
+                        : history.filter(m => m.teamId === activeTeamId);
+                      let totalPlusMinus = filteredMatches.reduce((sum, m) => sum + ((m.teamScore ?? 0) - (m.opponentScore ?? 0)), 0);
+
+                      return (
+                        <tr className="bg-primary/15 border-t border-primary/30 font-bold text-white relative z-10">
+                          <td className={`px-3 sm:px-4 py-4 sticky left-0 sm:relative sm:bg-transparent z-10 transition-colors ${activeTeamId === 'all' ? 'bg-[#231710]' : getTeamStickyBgColorClass(activeTeamId)}`}>
+                            <div className="flex items-center gap-2">
+                              <span className="font-display font-black text-primary">TEAM</span>
+                              <span className="font-display font-black uppercase text-xs sm:text-sm whitespace-nowrap text-primary">TOTAAL</span>
+                            </div>
+                          </td>
+                          <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-primary">{totalW}</td>
+                          <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-primary">{formatTime(totalW > 0 ? totalTime / totalW : 0)}</td>
+                          <td className="px-3 sm:px-4 py-4 font-bold text-primary font-mono text-[11px] sm:text-sm">
+                            {totalW > 0 ? (totalPoints / totalW).toFixed(1) : '0.0'}
+                          </td>
+                          <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Team veldscores: ${totalFgm} gemaakt van ${totalFga} genomen`}>
+                            <span className="font-bold text-white">{calculatePercentage(totalFgm, totalFga)}</span>
+                            <span className="text-[10px] text-text-muted ml-1.5 font-normal">({totalFgm}/{totalFga})</span>
+                          </td>
+                          <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Team 3-punters: ${total3Fgm} gemaakt van ${total3Fga} genomen`}>
+                            <span className="font-bold text-white">{calculatePercentage(total3Fgm, total3Fga)}</span>
+                            <span className="text-[10px] text-text-muted ml-1.5 font-normal">({total3Fgm}/{total3Fga})</span>
+                          </td>
+                          <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm whitespace-nowrap" title={`Team vrije worpen: ${totalFtm} gemaakt van ${totalFta} genomen`}>
+                            <span className="font-bold text-white">{calculatePercentage(totalFtm, totalFta)}</span>
+                            <span className="text-[10px] text-text-muted ml-1.5 font-normal">({totalFtm}/{totalFta})</span>
+                          </td>
+                          <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalRebounds / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                          <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalDefReb / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                          <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalOffReb / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                          <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalAssists / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                          <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalSteals / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                          <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalBlocks / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                          <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-orange-200">{totalW > 0 ? (totalTurnovers / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-text-muted font-normal italic">avg</span></td>
+                          <td className="px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right text-red-300 font-bold">{totalW > 0 ? (totalPf / totalW).toFixed(1) : '0.0'} <span className="text-[9px] text-red-300/80 font-normal italic">avg</span></td>
+                          <td className={`px-3 sm:px-4 py-4 font-mono text-[11px] sm:text-sm text-right font-bold ${totalPlusMinus > 0 ? 'text-green-400' : totalPlusMinus < 0 ? 'text-red-400' : 'text-white'}`}>
+                            {totalPlusMinus > 0 ? `+${totalPlusMinus}` : totalPlusMinus}
+                          </td>
+                          <td className="px-3 sm:px-4 py-4 text-center"></td>
+                        </tr>
+                      );
+                    })()}
+
+                    {stats.length === 0 && (
+                      <tr>
+                        <td colSpan={17} className="py-20 text-center text-text-muted">Geen data beschikbaar</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
 
   const [showAddPlayerModal, setShowAddPlayerModal] = useState(false);
   const [showEditPlayerModal, setShowEditPlayerModal] = useState(false);
@@ -4834,108 +5016,141 @@ export default function App() {
                   );
                 })()}
 
-                <div className="space-y-4 sm:space-y-6">
-                  <h4 className="text-lg sm:text-xl font-display font-black italic uppercase tracking-tighter text-white border-l-4 border-primary pl-4">Speler Statistieken</h4>
-                  <div className="grid grid-cols-1 gap-3 sm:gap-4">
-                    {selectedMatch.players.map(player => {
-                      const playerShifts = getPlayerShifts(player);
+                {/* Sub-tab toggle in match details */}
+                <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+                  <button
+                    onClick={() => setMatchDetailSubTab('players')}
+                    className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold uppercase transition-all flex items-center gap-2 cursor-pointer ${
+                      matchDetailSubTab === 'players'
+                        ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                        : 'bg-white/5 text-text-muted hover:text-white'
+                    }`}
+                  >
+                    <Users size={16} /> Spelers Individueel
+                  </button>
+                  <button
+                    onClick={() => setMatchDetailSubTab('combinations')}
+                    className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold uppercase transition-all flex items-center gap-2 cursor-pointer ${
+                      matchDetailSubTab === 'combinations'
+                        ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                        : 'bg-white/5 text-text-muted hover:text-white'
+                    }`}
+                  >
+                    <Layers size={16} /> Opstellingen & Combinaties (+/-)
+                  </button>
+                </div>
 
-                      return (
-                      <div key={player.id} className="bg-white/5 p-3 sm:p-4 rounded-xl space-y-3 sm:space-y-4 border border-white/5">
-                        <div className="flex justify-between items-center border-b border-white/5 pb-3 sm:pb-4">
-                          <div className="flex items-center gap-2 sm:gap-3">
-                            <span className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-[10px] sm:text-xs flex-shrink-0">#{player.number}</span>
-                            <span className="font-bold text-base sm:text-lg truncate">{player.name}</span>
-                            <span className="text-[9px] sm:text-xs text-text-muted bg-dark px-1.5 sm:px-2 py-0.5 rounded uppercase font-bold">{player.position}</span>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <div className="text-lg sm:text-xl font-mono font-bold text-primary">{formatTime(player.totalTime)}</div>
-                            {playerShifts.length > 0 && (
-                              <div className="text-[10px] text-text-muted font-sans font-bold">
-                                {playerShifts.length} {playerShifts.length === 1 ? 'speelbeurt' : 'speelbeurten'}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-                          <HistoryStat label="PTN" value={player.stats.points} />
-                          <HistoryStat label="AST" value={player.stats.assists} />
-                          <HistoryStat label="REB" value={player.stats.rebounds} />
-                          <HistoryStat label="STL" value={player.stats.steals} />
-                          <HistoryStat label="BLK" value={player.stats.blocks} />
-                          <HistoryStat label="TO" value={player.stats.turnovers} />
-                          <HistoryStat label="PF" value={player.stats.pf || 0} />
-                          <div className={`p-2 rounded-lg text-center border border-white/5 ${
-                            (player.stats.plusMinus || 0) > 0 
-                              ? 'bg-green-500/10 text-green-400 border-green-500/20' 
-                              : (player.stats.plusMinus || 0) < 0 
-                                ? 'bg-red-500/10 text-red-400 border-red-500/20' 
-                                : 'bg-dark/50 text-white'
-                          }`}>
-                            <div className="text-[8px] text-text-muted uppercase font-bold">+/-</div>
-                            <div className="text-sm font-bold mt-0.5">
-                              {(player.stats.plusMinus || 0) > 0 ? `+${player.stats.plusMinus}` : (player.stats.plusMinus || 0)}
+                {matchDetailSubTab === 'combinations' ? (
+                  <LineupCombinationView
+                    matches={[selectedMatch]}
+                    allPlayers={selectedMatch.players}
+                    isSingleMatch
+                    title={`Opstellingen & Combinaties (+/-) — vs ${selectedMatch.opponent}`}
+                  />
+                ) : (
+                  <div className="space-y-4 sm:space-y-6">
+                    <h4 className="text-lg sm:text-xl font-display font-black italic uppercase tracking-tighter text-white border-l-4 border-primary pl-4">Speler Statistieken</h4>
+                    <div className="grid grid-cols-1 gap-3 sm:gap-4">
+                      {selectedMatch.players.map(player => {
+                        const playerShifts = getPlayerShifts(player);
+
+                        return (
+                        <div key={player.id} className="bg-white/5 p-3 sm:p-4 rounded-xl space-y-3 sm:space-y-4 border border-white/5">
+                          <div className="flex justify-between items-center border-b border-white/5 pb-3 sm:pb-4">
+                            <div className="flex items-center gap-2 sm:gap-3">
+                              <span className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-[10px] sm:text-xs flex-shrink-0">#{player.number}</span>
+                              <span className="font-bold text-base sm:text-lg truncate">{player.name}</span>
+                              <span className="text-[9px] sm:text-xs text-text-muted bg-dark px-1.5 sm:px-2 py-0.5 rounded uppercase font-bold">{player.position}</span>
                             </div>
-                          </div>
-                        </div>
-
-                        {/* Speelbeurten breakdown */}
-                        {playerShifts.length > 0 && (
-                          <div className="bg-black/25 rounded-xl p-2.5 sm:p-3 border border-white/5 space-y-1.5">
-                            <div className="flex items-center justify-between text-[11px] font-bold">
-                              <span className="flex items-center gap-1.5 text-primary uppercase tracking-wider">
-                                <Clock size={12} /> Speelbeurten ({playerShifts.length})
-                              </span>
-                              {playerShifts.length > 1 && (
-                                <span className="text-[10px] text-text-muted font-sans font-medium">
-                                  Gemiddelde beurtduur: <strong className="text-white font-mono">{formatTime(Math.round((player.totalTime || 0) / playerShifts.length))}</strong>
-                                </span>
+                            <div className="text-right flex-shrink-0">
+                              <div className="text-lg sm:text-xl font-mono font-bold text-primary">{formatTime(player.totalTime)}</div>
+                              {playerShifts.length > 0 && (
+                                <div className="text-[10px] text-text-muted font-sans font-bold">
+                                  {playerShifts.length} {playerShifts.length === 1 ? 'speelbeurt' : 'speelbeurten'}
+                                </div>
                               )}
                             </div>
-                            <div className="flex flex-wrap gap-1.5 sm:gap-2 pt-0.5">
-                              {playerShifts.map((s, sIdx) => (
-                                <div 
-                                  key={sIdx}
-                                  className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 px-2.5 py-1 rounded-lg text-xs font-mono transition-colors shadow-sm"
-                                >
-                                  <span className="text-[10px] text-primary font-bold font-sans uppercase">
-                                    Beurt {s.shiftNumber || sIdx + 1}:
-                                  </span>
-                                  <span className="text-white font-bold font-mono">
-                                    {formatTime(s.duration)}
-                                  </span>
-                                </div>
-                              ))}
+                          </div>
+                          
+                          <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                            <HistoryStat label="PTN" value={player.stats.points} />
+                            <HistoryStat label="AST" value={player.stats.assists} />
+                            <HistoryStat label="REB" value={player.stats.rebounds} />
+                            <HistoryStat label="STL" value={player.stats.steals} />
+                            <HistoryStat label="BLK" value={player.stats.blocks} />
+                            <HistoryStat label="TO" value={player.stats.turnovers} />
+                            <HistoryStat label="PF" value={player.stats.pf || 0} />
+                            <div className={`p-2 rounded-lg text-center border border-white/5 ${
+                              (player.stats.plusMinus || 0) > 0 
+                                ? 'bg-green-500/10 text-green-400 border-green-500/20' 
+                                : (player.stats.plusMinus || 0) < 0 
+                                  ? 'bg-red-500/10 text-red-400 border-red-500/20' 
+                                  : 'bg-dark/50 text-white'
+                            }`}>
+                              <div className="text-[8px] text-text-muted uppercase font-bold">+/-</div>
+                              <div className="text-sm font-bold mt-0.5">
+                                {(player.stats.plusMinus || 0) > 0 ? `+${player.stats.plusMinus}` : (player.stats.plusMinus || 0)}
+                              </div>
                             </div>
                           </div>
-                        )}
 
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5">
-                          <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] text-text-muted font-mono">
-                            <span><strong className="text-white">FG:</strong> {player.stats.fgm || 0}/{player.stats.fga || 0} ({calculatePercentage(player.stats.fgm || 0, player.stats.fga || 0)})</span>
-                            <span className="hidden xs:inline">•</span>
-                            <span><strong className="text-white">3P:</strong> {player.stats.threeFgm || 0}/{player.stats.threeFga || 0} ({calculatePercentage(player.stats.threeFgm || 0, player.stats.threeFga || 0)})</span>
-                            <span className="hidden xs:inline">•</span>
-                            <span><strong className="text-white">FT:</strong> {player.stats.ftm || 0}/{player.stats.fta || 0} ({calculatePercentage(player.stats.ftm || 0, player.stats.fta || 0)})</span>
-                            <span className="hidden xs:inline">•</span>
-                            <span><strong className="text-white">REB:</strong> {player.stats.rebounds || 0} ({player.stats.offReb || 0}o / {player.stats.defReb || 0}d)</span>
+                          {/* Speelbeurten breakdown */}
+                          {playerShifts.length > 0 && (
+                            <div className="bg-black/25 rounded-xl p-2.5 sm:p-3 border border-white/5 space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px] font-bold">
+                                <span className="flex items-center gap-1.5 text-primary uppercase tracking-wider">
+                                  <Clock size={12} /> Speelbeurten ({playerShifts.length})
+                                </span>
+                                {playerShifts.length > 1 && (
+                                  <span className="text-[10px] text-text-muted font-sans font-medium">
+                                    Gemiddelde beurtduur: <strong className="text-white font-mono">{formatTime(Math.round((player.totalTime || 0) / playerShifts.length))}</strong>
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap gap-1.5 sm:gap-2 pt-0.5">
+                                {playerShifts.map((s, sIdx) => (
+                                  <div 
+                                    key={sIdx}
+                                    className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 px-2.5 py-1 rounded-lg text-xs font-mono transition-colors shadow-sm"
+                                  >
+                                    <span className="text-[10px] text-primary font-bold font-sans uppercase">
+                                      Beurt {s.shiftNumber || sIdx + 1}:
+                                    </span>
+                                    <span className="text-white font-bold font-mono">
+                                      {formatTime(s.duration)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5">
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] text-text-muted font-mono">
+                              <span><strong className="text-white">FG:</strong> {player.stats.fgm || 0}/{player.stats.fga || 0} ({calculatePercentage(player.stats.fgm || 0, player.stats.fga || 0)})</span>
+                              <span className="hidden xs:inline">•</span>
+                              <span><strong className="text-white">3P:</strong> {player.stats.threeFgm || 0}/{player.stats.threeFga || 0} ({calculatePercentage(player.stats.threeFgm || 0, player.stats.threeFga || 0)})</span>
+                              <span className="hidden xs:inline">•</span>
+                              <span><strong className="text-white">FT:</strong> {player.stats.ftm || 0}/{player.stats.fta || 0} ({calculatePercentage(player.stats.ftm || 0, player.stats.fta || 0)})</span>
+                              <span className="hidden xs:inline">•</span>
+                              <span><strong className="text-white">REB:</strong> {player.stats.rebounds || 0} ({player.stats.offReb || 0}o / {player.stats.defReb || 0}d)</span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setSelectedPlayerForStats({ id: player.id, name: player.name, number: player.number, position: player.position as string });
+                              }}
+                              className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase text-primary hover:text-white bg-primary/10 hover:bg-primary px-2.5 py-1 rounded-lg transition-all active:scale-95 shadow-sm"
+                              title={`Bekijk alle wedstrijden van ${player.name}`}
+                            >
+                              <Activity size={12} /> Alle wedstrijden ({player.name})
+                            </button>
                           </div>
-                          <button
-                            onClick={() => {
-                              setSelectedPlayerForStats({ id: player.id, name: player.name, number: player.number, position: player.position as string });
-                            }}
-                            className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase text-primary hover:text-white bg-primary/10 hover:bg-primary px-2.5 py-1 rounded-lg transition-all active:scale-95 shadow-sm"
-                            title={`Bekijk alle wedstrijden van ${player.name}`}
-                          >
-                            <Activity size={12} /> Alle wedstrijden ({player.name})
-                          </button>
                         </div>
-                      </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </motion.div>
           </div>

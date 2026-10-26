@@ -31,7 +31,10 @@ import {
   RefreshCw,
   ShieldCheck,
   Building2,
-  Layers
+  Layers,
+  AlertTriangle,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { Player, MatchHistoryEntry, Tab, Position, Session, Team, TeamPlayer, LineupStint, SEASONS, DEFAULT_SEASON, DEFAULT_MEMBERSHIP, UserMembership, UserRole, ClubMemberRole, ClubWorkspace } from './types';
 import { INITIAL_STATS, formatTime, formatDate, calculatePercentage, getPlayerShifts, getMatchLineupStints } from './utils';
@@ -297,6 +300,7 @@ export default function App() {
   const [historySeasonFilter, setHistorySeasonFilter] = useState<string>('All');
   const [seasonTabSeasonFilter, setSeasonTabSeasonFilter] = useState<string>('All');
   const [showMatchStartModal, setShowMatchStartModal] = useState(false);
+  const [showEndMatchModal, setShowEndMatchModal] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<MatchHistoryEntry | null>(null);
   const [selectedPlayerForStats, setSelectedPlayerForStats] = useState<{ id?: string; name: string; number: string; position?: string } | null>(null);
   const [detailSeason, setDetailSeason] = useState<string>('2026/2027');
@@ -3041,8 +3045,8 @@ export default function App() {
             </button>
           ) : (
             <button 
-              onClick={endMatch} 
-              className="w-full sm:w-auto bg-red-500 hover:bg-red-600 text-white font-display font-black italic uppercase tracking-widest py-3 sm:py-5 px-6 sm:px-10 rounded-2xl transition-all active:scale-95 text-xs sm:text-sm shadow-xl shadow-red-500/20 flex items-center justify-center"
+              onClick={() => setShowEndMatchModal(true)} 
+              className="w-full sm:w-auto bg-red-500 hover:bg-red-600 text-white font-display font-black italic uppercase tracking-widest py-3 sm:py-5 px-6 sm:px-10 rounded-2xl transition-all active:scale-95 text-xs sm:text-sm shadow-xl shadow-red-500/20 flex items-center justify-center cursor-pointer"
             >
               Beëindigen
             </button>
@@ -4752,6 +4756,219 @@ export default function App() {
             </motion.div>
           </div>
         )}
+
+        {showEndMatchModal && (() => {
+          const currentTeamScore = players.reduce((sum, p) => sum + (p.stats.points || 0), 0);
+          const currentOppScore = opponentScore;
+          const remainingMs = getRemainingTime();
+          const isClockRunning = gameClockRunning;
+          const periodLabel = getPeriodLabel(currentPeriod);
+          const totalMatchDuration = getTotalMatchDuration();
+          const activePlayersCount = players.filter(p => p.isRunning || (p.totalTime || 0) > 0).length;
+          
+          const isEarlyQuarter = currentPeriod < 4;
+          const isQuarterTimeLeft = remainingMs > 0;
+          const isTie = currentTeamScore === currentOppScore;
+          const isFullyFinished = !isEarlyQuarter && !isQuarterTimeLeft && !isClockRunning && !isTie;
+
+          const issues: { type: 'danger' | 'warning' | 'info'; title: string; desc: string }[] = [];
+
+          if (isClockRunning) {
+            issues.push({
+              type: 'warning',
+              title: 'Klok loopt nog',
+              desc: 'De wedstrijdklok is nog niet gepauzeerd. Als je beëindigt, wordt de klok per direct stilgezet.'
+            });
+          }
+
+          if (isEarlyQuarter) {
+            issues.push({
+              type: 'danger',
+              title: `Wedstrijd is pas in ${periodLabel}`,
+              desc: `Een officiële basketbalwedstrijd duurt 4 kwarten van 10 minuten. Er zijn nog ${4 - currentPeriod} kwart(en) te spelen!`
+            });
+          } else if (isQuarterTimeLeft) {
+            issues.push({
+              type: 'warning',
+              title: `Tijd over in ${periodLabel}`,
+              desc: `Er staat nog ${formatTime(remainingMs)} op de wedstrijdklok. ${periodLabel} is nog niet afgerond.`
+            });
+          }
+
+          if (isTie) {
+            issues.push({
+              type: 'warning',
+              title: 'Gelijke stand (Gelijkspel)',
+              desc: `De stand is momenteel ${currentTeamScore} - ${currentOppScore}. In basketbal eindigt een wedstrijd normaal gesproken niet gelijk en hoort er een verlenging (OT van 5 min) gespeeld te worden.`
+            });
+          }
+
+          return (
+            <div className="fixed inset-0 bg-dark/95 backdrop-blur-md z-[110] flex items-center justify-center p-4 overflow-y-auto">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-surface border border-white/10 w-full max-w-lg rounded-3xl p-5 sm:p-7 shadow-2xl relative my-auto space-y-5"
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                      isFullyFinished 
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                        : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                    }`}>
+                      {isFullyFinished ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}
+                    </div>
+                    <div>
+                      <h3 className="text-xl sm:text-2xl font-display font-black italic uppercase tracking-tighter text-white">
+                        Wedstrijd Beëindigen
+                      </h3>
+                      <p className="text-[11px] text-text-muted font-sans mt-0.5">
+                        Controleer of de wedstrijd echt afgelopen is
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowEndMatchModal(false)}
+                    className="p-1.5 text-text-muted hover:text-white rounded-xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Score & Match Status Preview */}
+                <div className="bg-black/30 border border-white/5 rounded-2xl p-4 sm:p-5 space-y-3">
+                  <div className="flex items-center justify-between text-xs text-text-muted font-bold uppercase tracking-wider">
+                    <span>Eindstand Preview</span>
+                    <span className="font-mono text-white/70">{periodLabel} • {formatTime(remainingMs)} resterend</span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4 py-2">
+                    <div className="flex-1 text-center sm:text-left">
+                      <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider">Eigen Team</div>
+                      <div className="text-3xl sm:text-4xl font-mono font-black text-primary">{currentTeamScore}</div>
+                    </div>
+                    <div className="text-lg font-black text-white/30 font-display italic uppercase">VS</div>
+                    <div className="flex-1 text-center sm:text-right">
+                      <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider truncate">{opponent || 'Tegenstander'}</div>
+                      <div className="text-3xl sm:text-4xl font-mono font-black text-white">{currentOppScore}</div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/5 grid grid-cols-3 gap-2 text-center text-[10px] font-sans">
+                    <div className="bg-white/5 p-2 rounded-xl">
+                      <span className="text-text-muted block font-medium">Resultaat</span>
+                      <strong className={`font-bold uppercase ${
+                        currentTeamScore > currentOppScore 
+                          ? 'text-emerald-400' 
+                          : currentTeamScore < currentOppScore 
+                            ? 'text-red-400' 
+                            : 'text-amber-400'
+                      }`}>
+                        {currentTeamScore > currentOppScore ? 'Winst' : currentTeamScore < currentOppScore ? 'Verlies' : 'Gelijk'}
+                      </strong>
+                    </div>
+                    <div className="bg-white/5 p-2 rounded-xl">
+                      <span className="text-text-muted block font-medium">Totale Duur</span>
+                      <strong className="text-white font-mono">{formatTime(totalMatchDuration)}</strong>
+                    </div>
+                    <div className="bg-white/5 p-2 rounded-xl">
+                      <span className="text-text-muted block font-medium">Spelers Inzet</span>
+                      <strong className="text-white">{activePlayersCount} spelers</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status Checks / Warnings */}
+                {isFullyFinished ? (
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex items-start gap-3 text-xs text-emerald-300">
+                    <CheckCircle2 size={18} className="shrink-0 text-emerald-400 mt-0.5" />
+                    <div>
+                      <strong className="font-bold block text-emerald-200">Wedstrijd is officieel afgelopen</strong>
+                      De 4 kwarten zijn volledig gespeeld, de wedstrijdklok staat op 00:00 en er is een besliste winnaar. Je kunt de wedstrijd nu veilig opslaan in de geschiedenis.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400">
+                      <AlertTriangle size={15} />
+                      <span>Let op: Controlepunten openstaand ({issues.length})</span>
+                    </div>
+
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {issues.map((iss, idx) => (
+                        <div 
+                          key={idx}
+                          className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
+                            iss.type === 'danger'
+                              ? 'bg-red-500/10 border-red-500/25 text-red-300'
+                              : 'bg-amber-500/10 border-amber-500/25 text-amber-200'
+                          }`}
+                        >
+                          <AlertCircle size={16} className={`shrink-0 mt-0.5 ${iss.type === 'danger' ? 'text-red-400' : 'text-amber-400'}`} />
+                          <div>
+                            <strong className="font-bold block">{iss.title}</strong>
+                            <span className="text-[11px] opacity-90 leading-relaxed font-sans">{iss.desc}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Quick remedies */}
+                    {isTie && !isQuarterTimeLeft && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          switchPeriod(currentPeriod + 1);
+                          setShowEndMatchModal(false);
+                        }}
+                        className="w-full py-2.5 px-3 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 border border-orange-500/30 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus size={14} /> Start Direct Verlenging (OT van 5 min)
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="pt-2 flex flex-col sm:flex-row items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowEndMatchModal(false)}
+                    className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs uppercase transition-all border border-white/10 cursor-pointer text-center"
+                  >
+                    Nee, Verder Spelen
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      endMatch();
+                      setShowEndMatchModal(false);
+                    }}
+                    className={`w-full sm:flex-1 py-3 px-4 rounded-xl text-white font-display font-black italic uppercase tracking-wider text-xs transition-all active:scale-95 shadow-lg flex items-center justify-center gap-2 cursor-pointer ${
+                      isFullyFinished
+                        ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30'
+                        : 'bg-red-600 hover:bg-red-500 shadow-red-600/30'
+                    }`}
+                  >
+                    {isFullyFinished ? (
+                      <>
+                        <CheckCircle2 size={16} /> Opslaan & Afronden
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 size={15} /> Toch Beëindigen & Opslaan
+                      </>
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
 
         {showAddPlayerModal && (
           <div className="fixed inset-0 bg-dark/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
